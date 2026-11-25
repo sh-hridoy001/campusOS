@@ -1,0 +1,225 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global safety net: deny everything by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isTokenAdmin() {
+      return isSignedIn()
+        && request.auth.token.email == 'sazzadhossainhridoy961@gmail.com'
+        && request.auth.token.email_verified == true;
+    }
+
+    function hasProfile() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/profiles/$(request.auth.uid));
+    }
+
+    function callerRole() {
+      return get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role;
+    }
+
+    function isAdmin() {
+      return isTokenAdmin() || (hasProfile() && callerRole() == 'admin');
+    }
+
+    function isTeacher() {
+      return hasProfile() && callerRole() == 'teacher';
+    }
+
+    function isStaffOrAdmin() {
+      return isTokenAdmin() || (hasProfile() && callerRole() in ['teacher', 'admin']);
+    }
+
+    function isValidRole(val) {
+      return val is string && val in ['student', 'teacher', 'admin'];
+    }
+
+    function isValidWeekday(val) {
+      return val is string && val in [
+        'Monday',
+        'Tuesday',
+        'Wednesday',
+        'Thursday',
+        'Friday',
+        'Saturday',
+        'Sunday'
+      ];
+    }
+
+    function isValidProfile(data) {
+      return data.keys().hasAll(['uid', 'full_name', 'role', 'department', 'email', 'created_at'])
+        && data.keys().hasOnly(['uid', 'full_name', 'role', 'department', 'email', 'created_at'])
+        && isValidId(data.uid)
+        && data.full_name is string && data.full_name.size() >= 1 && data.full_name.size() <= 120
+        && isValidRole(data.role)
+        && data.department is string && data.department.size() >= 1 && data.department.size() <= 100
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 200
+        && data.created_at is timestamp;
+    }
+
+    function isValidNotice(data) {
+      return data.keys().hasAll([
+          'title',
+          'content',
+          'created_by',
+          'author_name',
+          'author_role',
+          'author_department',
+          'created_at'
+        ])
+        && data.keys().hasOnly([
+          'title',
+          'content',
+          'created_by',
+          'author_name',
+          'author_role',
+          'author_department',
+          'created_at'
+        ])
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 240
+        && data.content is string && data.content.size() >= 1 && data.content.size() <= 10000
+        && isValidId(data.created_by)
+        && data.author_name is string && data.author_name.size() >= 1 && data.author_name.size() <= 120
+        && isValidRole(data.author_role)
+        && data.author_department is string && data.author_department.size() >= 1 && data.author_department.size() <= 100
+        && data.created_at is timestamp;
+    }
+
+    function isValidRoutine(data) {
+      return data.keys().hasAll([
+          'day',
+          'time_slot',
+          'subject',
+          'teacher_name',
+          'room',
+          'department',
+          'created_by',
+          'created_at'
+        ])
+        && data.keys().hasOnly([
+          'day',
+          'time_slot',
+          'subject',
+          'teacher_name',
+          'room',
+          'department',
+          'created_by',
+          'created_at'
+        ])
+        && isValidWeekday(data.day)
+        && data.time_slot is string && data.time_slot.size() >= 1 && data.time_slot.size() <= 60
+        && data.subject is string && data.subject.size() >= 1 && data.subject.size() <= 140
+        && data.teacher_name is string && data.teacher_name.size() >= 1 && data.teacher_name.size() <= 120
+        && data.room is string && data.room.size() >= 1 && data.room.size() <= 60
+        && data.department is string && data.department.size() >= 1 && data.department.size() <= 100
+        && isValidId(data.created_by)
+        && data.created_at is timestamp;
+    }
+
+    match /profiles/{profileId} {
+      allow get: if isSignedIn() && isValidId(profileId) && (isOwner(profileId) || isAdmin());
+      allow list: if isSignedIn() && (resource.data.uid == request.auth.uid || isTokenAdmin());
+
+      allow create: if isSignedIn()
+        && isValidId(profileId)
+        && isOwner(profileId)
+        && isValidProfile(incoming())
+        && incoming().uid == request.auth.uid
+        && incoming().created_at == request.time;
+
+      allow update: if isSignedIn()
+        && isValidId(profileId)
+        && isValidProfile(incoming())
+        && incoming().uid == existing().uid
+        && incoming().created_at == existing().created_at
+        && (
+          isAdmin()
+          || (
+            isOwner(profileId)
+            && incoming().role == existing().role
+            && incoming().diff(existing()).affectedKeys().hasOnly(['full_name', 'department'])
+          )
+        );
+
+      allow delete: if isSignedIn() && isValidId(profileId) && isAdmin();
+    }
+
+    match /notices/{noticeId} {
+      allow get: if isSignedIn() && isValidId(noticeId);
+      allow list: if isSignedIn();
+
+      allow create: if isSignedIn()
+        && isValidId(noticeId)
+        && isValidNotice(incoming())
+        && incoming().created_by == request.auth.uid
+        && incoming().created_at == request.time
+        && isStaffOrAdmin();
+
+      allow update: if isSignedIn()
+        && isValidId(noticeId)
+        && isValidNotice(incoming())
+        && incoming().created_by == existing().created_by
+        && incoming().created_at == existing().created_at
+        && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'content'])
+        && (isAdmin() || (isTeacher() && existing().created_by == request.auth.uid));
+
+      allow delete: if isSignedIn()
+        && isValidId(noticeId)
+        && (isAdmin() || (isTeacher() && existing().created_by == request.auth.uid));
+    }
+
+    match /routines/{routineId} {
+      allow get: if isSignedIn() && isValidId(routineId);
+      allow list: if isSignedIn();
+
+      allow create: if isSignedIn()
+        && isValidId(routineId)
+        && isValidRoutine(incoming())
+        && incoming().created_by == request.auth.uid
+        && incoming().created_at == request.time
+        && isStaffOrAdmin();
+
+      allow update: if isSignedIn()
+        && isValidId(routineId)
+        && isValidRoutine(incoming())
+        && incoming().created_by == existing().created_by
+        && incoming().created_at == existing().created_at
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'day',
+          'time_slot',
+          'subject',
+          'teacher_name',
+          'room',
+          'department'
+        ])
+        && isStaffOrAdmin();
+
+      allow delete: if isSignedIn()
+        && isValidId(routineId)
+        && isStaffOrAdmin();
+    }
+  }
+}

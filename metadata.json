@@ -1,0 +1,6 @@
+{
+  "name": "CampusOS — Intelligent Campus Ecosystem",
+  "description": "Modern academic campus platform with role-based dashboards, smart notices, class routine management, PDF study Q&A, lost & found, and Gemini AI assistance.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

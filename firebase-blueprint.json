@@ -1,0 +1,183 @@
+{
+  "entities": {
+    "Profile": {
+      "title": "Profile",
+      "description": "Campus user profile storing identity, academic role, and department.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID of the user."
+        },
+        "full_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Full display name of the campus member."
+        },
+        "role": {
+          "type": "string",
+          "enum": ["student", "teacher", "admin"],
+          "description": "Academic role within CampusOS."
+        },
+        "department": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Academic department name."
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "minLength": 3,
+          "maxLength": 200,
+          "description": "University email address."
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when profile was created."
+        }
+      },
+      "required": ["uid", "full_name", "role", "department", "email", "created_at"]
+    },
+    "Notice": {
+      "title": "Notice",
+      "description": "Official campus announcement published by teachers or administrators.",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240,
+          "description": "Announcement headline."
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 10000,
+          "description": "Full notice body."
+        },
+        "created_by": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Author UID."
+        },
+        "author_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Denormalized author display name."
+        },
+        "author_role": {
+          "type": "string",
+          "enum": ["student", "teacher", "admin"],
+          "description": "Denormalized author role."
+        },
+        "author_department": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Denormalized author department."
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when notice was published."
+        }
+      },
+      "required": [
+        "title",
+        "content",
+        "created_by",
+        "author_name",
+        "author_role",
+        "author_department",
+        "created_at"
+      ]
+    },
+    "Routine": {
+      "title": "Routine",
+      "description": "Scheduled class routine slot organized by weekday and department.",
+      "type": "object",
+      "properties": {
+        "day": {
+          "type": "string",
+          "enum": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+          "description": "Weekday of the class."
+        },
+        "time_slot": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60,
+          "description": "Class time window."
+        },
+        "subject": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 140,
+          "description": "Course code and subject title."
+        },
+        "teacher_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Instructor name."
+        },
+        "room": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60,
+          "description": "Classroom or lab identifier."
+        },
+        "department": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Department offering the class."
+        },
+        "created_by": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "UID of teacher or admin who added the slot."
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when class slot was created."
+        }
+      },
+      "required": [
+        "day",
+        "time_slot",
+        "subject",
+        "teacher_name",
+        "room",
+        "department",
+        "created_by",
+        "created_at"
+      ]
+    }
+  },
+  "firestore": {
+    "/profiles/{profileId}": {
+      "schema": { "$ref": "#/entities/Profile" },
+      "description": "User profiles keyed by Firebase Auth UID."
+    },
+    "/notices/{noticeId}": {
+      "schema": { "$ref": "#/entities/Notice" },
+      "description": "Official campus notices readable by signed-in members and managed by teachers/admins."
+    },
+    "/routines/{routineId}": {
+      "schema": { "$ref": "#/entities/Routine" },
+      "description": "Department class routine slots readable by signed-in members and managed by teachers/admins."
+    }
+  }
+}
