@@ -25,11 +25,15 @@ async function apiRequest<T>(
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(
-      typeof data?.error === 'string'
-        ? data.error
-        : `Request failed with status ${res.status}`,
-    );
+    if (typeof data?.error === 'string' && data.error.trim()) {
+      throw new Error(data.error);
+    }
+    if (res.status === 502 || res.status === 503 || res.status === 504) {
+      throw new Error(
+        'সার্ভার এখন একটু ব্যস্ত আছে, অনুগ্রহ করে কয়েক সেকেন্ড পর আবার চেষ্টা করুন।',
+      );
+    }
+    throw new Error(`Request failed with status ${res.status}`);
   }
   return data as T;
 }

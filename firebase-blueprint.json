@@ -2,7 +2,7 @@
   "entities": {
     "Profile": {
       "title": "Profile",
-      "description": "Campus user profile storing identity, academic role, and department.",
+      "description": "BSPI Kaptai campus user profile storing identity, academic role, department, shift, semester, and bookmarked notices.",
       "type": "object",
       "properties": {
         "uid": {
@@ -27,14 +27,37 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 100,
-          "description": "Academic department name."
+          "description": "BSPI Technology / Department name."
+        },
+        "shift": {
+          "type": "string",
+          "enum": ["1st Shift", "2nd Shift"],
+          "description": "Preferred BSPI campus shift."
+        },
+        "semester": {
+          "type": "string",
+          "enum": [
+            "1st Semester",
+            "2nd Semester",
+            "3rd Semester",
+            "4th Semester",
+            "5th Semester",
+            "6th Semester",
+            "7th Semester",
+            "8th Semester"
+          ],
+          "description": "Current Diploma-in-Engineering semester."
+        },
+        "bookmarked_notices": {
+          "type": "array",
+          "description": "Notice document IDs bookmarked by the user (bounded at 100 items)."
         },
         "email": {
           "type": "string",
           "format": "email",
           "minLength": 3,
           "maxLength": 200,
-          "description": "University email address."
+          "description": "Campus or personal email address."
         },
         "created_at": {
           "type": "string",
@@ -46,7 +69,7 @@
     },
     "Notice": {
       "title": "Notice",
-      "description": "Official campus announcement published by teachers or administrators.",
+      "description": "Official BSPI Kaptai announcement published by teachers or administrators.",
       "type": "object",
       "properties": {
         "title": {
@@ -60,6 +83,15 @@
           "minLength": 1,
           "maxLength": 10000,
           "description": "Full notice body."
+        },
+        "category": {
+          "type": "string",
+          "enum": ["Academic", "Exam", "Admission", "Stipend/Upobritti", "General"],
+          "description": "Official notice category."
+        },
+        "is_urgent": {
+          "type": "boolean",
+          "description": "Highlights time-sensitive notices such as exam routines or stipend deadlines."
         },
         "created_by": {
           "type": "string",
@@ -103,19 +135,19 @@
     },
     "Routine": {
       "title": "Routine",
-      "description": "Scheduled class routine slot organized by weekday and department.",
+      "description": "Scheduled BSPI Kaptai class routine slot organized by weekday, department, shift, and semester.",
       "type": "object",
       "properties": {
         "day": {
           "type": "string",
-          "enum": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+          "enum": ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Saturday", "Friday"],
           "description": "Weekday of the class."
         },
         "time_slot": {
           "type": "string",
           "minLength": 1,
           "maxLength": 60,
-          "description": "Class time window."
+          "description": "Class time window (e.g., 08:00 AM - 08:45 AM)."
         },
         "subject": {
           "type": "string",
@@ -133,13 +165,32 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 60,
-          "description": "Classroom or lab identifier."
+          "description": "Classroom, workshop, or lab identifier."
         },
         "department": {
           "type": "string",
           "minLength": 1,
           "maxLength": 100,
-          "description": "Department offering the class."
+          "description": "BSPI technology offering the class."
+        },
+        "shift": {
+          "type": "string",
+          "enum": ["1st Shift", "2nd Shift"],
+          "description": "Academic shift (1st Shift morning or 2nd Shift afternoon)."
+        },
+        "semester": {
+          "type": "string",
+          "enum": [
+            "1st Semester",
+            "2nd Semester",
+            "3rd Semester",
+            "4th Semester",
+            "5th Semester",
+            "6th Semester",
+            "7th Semester",
+            "8th Semester"
+          ],
+          "description": "BTEB Diploma semester."
         },
         "created_by": {
           "type": "string",
@@ -173,11 +224,11 @@
     },
     "/notices/{noticeId}": {
       "schema": { "$ref": "#/entities/Notice" },
-      "description": "Official campus notices readable by signed-in members and managed by teachers/admins."
+      "description": "Official BSPI Kaptai notices readable by signed-in members and managed by teachers/admins."
     },
     "/routines/{routineId}": {
       "schema": { "$ref": "#/entities/Routine" },
-      "description": "Department class routine slots readable by signed-in members and managed by teachers/admins."
+      "description": "Department, shift, and semester class routine slots readable by signed-in members and managed by teachers/admins."
     }
   }
 }

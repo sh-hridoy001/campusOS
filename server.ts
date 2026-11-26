@@ -9,6 +9,10 @@ import crypto from 'crypto';
 import { GoogleGenAI, Type } from '@google/genai';
 import { getApp, getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth, type DecodedIdToken } from 'firebase-admin/auth';
+import {
+  CAMPUS_LINKS,
+  formatCampusKnowledgeForAI,
+} from './src/data/campusKnowledge.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -109,23 +113,146 @@ function isBootstrappedAdmin(user: DecodedIdToken): boolean {
   );
 }
 
+const BUSY_ERROR_BANGLA =
+  'সার্ভার এখন একটু ব্যস্ত আছে, অনুগ্রহ করে কয়েক সেকেন্ড পর আবার চেষ্টা করুন।';
+
+const GEMINI_MODEL_CASCADE = [
+  'gemini-4-hydrogen',
+  'gemini-3.1-flash-lite',
+] as const;
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function getErrorDetails(err: unknown): { status: number | null; text: string } {
+  const obj =
+    err && typeof err === 'object' ? (err as Record<string, unknown>) : null;
+  const rawStatus = obj?.status ?? obj?.code ?? obj?.httpStatus;
+  const status = typeof rawStatus === 'number' ? rawStatus : null;
+  const msg = err instanceof Error ? err.message : String(err ?? '');
+  let serialized = msg;
+  if (obj) {
+    try {
+      serialized = `${msg} ${JSON.stringify(obj)}`;
+    } catch {
+      serialized = msg;
+    }
+  }
+  return { status, text: serialized };
+}
+
+function isNonRetryableGeminiError(err: unknown): boolean {
+  const { status, text } = getErrorDetails(err);
+  const upper = text.toUpperCase();
+  return (
+    status === 401 ||
+    status === 403 ||
+    upper.includes('PERMISSION_DENIED') ||
+    upper.includes('API_KEY_INVALID') ||
+    upper.includes('API KEY NOT VALID')
+  );
+}
+
+function isModelNotFoundError(err: unknown): boolean {
+  const { status, text } = getErrorDetails(err);
+  const upper = text.toUpperCase();
+  return (
+    status === 404 ||
+    upper.includes('NOT_FOUND') ||
+    upper.includes('IS NOT FOUND FOR API VERSION') ||
+    upper.includes('NO LONGER AVAILABLE')
+  );
+}
+
+function isServiceUnavailableError(err: unknown): boolean {
+  const { status, text } = getErrorDetails(err);
+  const lower = text.toLowerCase();
+  return (
+    status === 503 ||
+    status === 502 ||
+    status === 504 ||
+    lower.includes('503') ||
+    lower.includes('unavailable') ||
+    lower.includes('high demand') ||
+    lower.includes('overloaded') ||
+    lower.includes('temporarily unavailable') ||
+    lower.includes('try again later') ||
+    lower.includes('resource_exhausted') ||
+    lower.includes('econnreset') ||
+    lower.includes('etimedout') ||
+    lower.includes('fetch failed')
+  );
+}
+
+async function runGeminiWithRetry<T>(
+  task: (model: string) => Promise<T>,
+): Promise<T> {
+  const attemptPlan: Array<{ model: string; waitAfterFailureMs: number }> = [
+    { model: GEMINI_MODEL_CASCADE[0], waitAfterFailureMs: 1500 },
+    { model: GEMINI_MODEL_CASCADE[0], waitAfterFailureMs: 1200 },
+    { model: GEMINI_MODEL_CASCADE[1], waitAfterFailureMs: 1200 },
+    { model: GEMINI_MODEL_CASCADE[1], waitAfterFailureMs: 0 },
+  ];
+
+  let lastError: unknown;
+  for (let i = 0; i < attemptPlan.length; i += 1) {
+    const { model, waitAfterFailureMs } = attemptPlan[i];
+    try {
+      return await task(model);
+    } catch (err) {
+      lastError = err;
+      if (isNonRetryableGeminiError(err)) {
+        throw err;
+      }
+
+      const isLastAttempt = i === attemptPlan.length - 1;
+      if (isLastAttempt) {
+        throw err;
+      }
+
+      const canRetryOrFallback =
+        isServiceUnavailableError(err) || isModelNotFoundError(err);
+      if (!canRetryOrFallback) {
+        throw err;
+      }
+
+      const { status } = getErrorDetails(err);
+      console.log(
+        `Gemini transient retry on ${model} (attempt ${i + 1}/${attemptPlan.length}, status=${status ?? 'unknown'})`,
+      );
+
+      if (!isModelNotFoundError(err) && waitAfterFailureMs > 0) {
+        await sleep(waitAfterFailureMs);
+      }
+    }
+  }
+
+  throw lastError;
+}
+
 function handleGeminiError(err: unknown, res: Response) {
   console.error('Gemini API error:', err);
-  const message =
-    err instanceof Error ? err.message : 'An error occurred while contacting Gemini AI.';
-  if (message.includes('PERMISSION_DENIED') || message.includes('API_KEY_INVALID')) {
+  const { text } = getErrorDetails(err);
+  const upper = text.toUpperCase();
+
+  if (upper.includes('PERMISSION_DENIED') || upper.includes('API_KEY_INVALID')) {
     res.status(403).json({
       error: 'Gemini API key is invalid or missing. Check GEMINI_API_KEY in Settings > Secrets.',
     });
     return;
   }
-  if (message.includes('RESOURCE_EXHAUSTED')) {
-    res.status(429).json({
-      error: 'Gemini API rate limit or quota reached. Please try again shortly.',
+
+  if (isServiceUnavailableError(err) || isModelNotFoundError(err)) {
+    res.status(503).json({
+      error: BUSY_ERROR_BANGLA,
     });
     return;
   }
-  res.status(500).json({ error: message });
+
+  res.status(500).json({ error: BUSY_ERROR_BANGLA });
 }
 
 async function startServer() {
@@ -162,36 +289,38 @@ async function startServer() {
       }
 
       try {
-        const response = await ai.models.generateContent({
-          model: 'gemini-4-hydrogen',
-          contents: `Summarize this official campus notice clearly for students and faculty.\n\nTitle: ${title.trim()}\n\nContent:\n${content.trim()}`,
-          config: {
-            systemInstruction:
-              'You are an academic campus assistant. Extract an accurate, concise summary, key bullet points, and concrete action items or deadlines from the notice. Do not invent facts not present in the notice.',
-            responseMimeType: 'application/json',
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                summary: {
-                  type: Type.STRING,
-                  description: 'A crisp 1-2 sentence executive summary of the notice.',
+        const response = await runGeminiWithRetry((model) =>
+          ai.models.generateContent({
+            model,
+            contents: `Summarize this official campus notice clearly for students and faculty.\n\nTitle: ${title.trim()}\n\nContent:\n${content.trim()}`,
+            config: {
+              systemInstruction:
+                'You are an academic campus assistant for Bangladesh Sweden Polytechnic Institute (BSPI), Kaptai. Extract an accurate, concise summary, key bullet points, and concrete action items or deadlines from the notice. Do not invent facts not present in the notice. Write in clear, natural Bengali if the notice is in Bengali or if helpful for BSPI students, otherwise match the notice clarity concisely.',
+              responseMimeType: 'application/json',
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  summary: {
+                    type: Type.STRING,
+                    description: 'A crisp 1-2 sentence executive summary of the notice.',
+                  },
+                  keyPoints: {
+                    type: Type.ARRAY,
+                    items: { type: Type.STRING },
+                    description: '3 to 5 concise key points from the notice.',
+                  },
+                  actionItems: {
+                    type: Type.ARRAY,
+                    items: { type: Type.STRING },
+                    description:
+                      'Specific deadlines, required actions, or dates mentioned (empty array if none).',
+                  },
                 },
-                keyPoints: {
-                  type: Type.ARRAY,
-                  items: { type: Type.STRING },
-                  description: '3 to 5 concise key points from the notice.',
-                },
-                actionItems: {
-                  type: Type.ARRAY,
-                  items: { type: Type.STRING },
-                  description:
-                    'Specific deadlines, required actions, or dates mentioned (empty array if none).',
-                },
+                required: ['summary', 'keyPoints', 'actionItems'],
               },
-              required: ['summary', 'keyPoints', 'actionItems'],
             },
-          },
-        });
+          }),
+        );
 
         const parsed = JSON.parse((response.text ?? '{}').trim());
         res.json(parsed);
@@ -237,15 +366,21 @@ async function startServer() {
       }
 
       const profileText = context?.profile
-        ? `Current User: ${String(context.profile.full_name || 'Campus Member')} | Role: ${String(context.profile.role || 'student')} | Department: ${String(context.profile.department || 'General')}`
+        ? `Current User: ${String(context.profile.full_name || 'Campus Member')} | Role: ${String(context.profile.role || 'student')} | Technology/Department: ${String(context.profile.department || 'General')} | Shift: ${String(context.profile.shift || 'Not specified')} | Semester: ${String(context.profile.semester || 'Not specified')}`
         : 'Current User: Campus Member';
 
       const noticesList = Array.isArray(context?.notices)
         ? context.notices
             .slice(0, 20)
             .map(
-              (n: { title?: string; content?: string; created_at?: string }) =>
-                `- [${n.created_at ? new Date(n.created_at).toLocaleDateString() : 'Recent'}] ${String(n.title || '')}: ${String(n.content || '').slice(0, 500)}`,
+              (n: {
+                title?: string;
+                content?: string;
+                category?: string;
+                is_urgent?: boolean;
+                created_at?: string;
+              }) =>
+                `- [${n.created_at ? new Date(n.created_at).toLocaleDateString() : 'Recent'}] [${n.is_urgent ? 'URGENT · ' : ''}${String(n.category || 'General')}] ${String(n.title || '')}: ${String(n.content || '').slice(0, 500)}`,
             )
             .join('\n')
         : '';
@@ -261,27 +396,49 @@ async function startServer() {
                 teacher_name?: string;
                 room?: string;
                 department?: string;
+                shift?: string;
+                semester?: string;
               }) =>
-                `- ${String(r.day || '')} | ${String(r.time_slot || '')} | ${String(r.subject || '')} | Instructor: ${String(r.teacher_name || '')} | Room: ${String(r.room || '')} | Dept: ${String(r.department || '')}`,
+                `- ${String(r.day || '')} | ${String(r.time_slot || '')} | ${String(r.subject || '')} | Instructor: ${String(r.teacher_name || '')} | Room: ${String(r.room || '')} | Tech: ${String(r.department || '')} | Shift: ${String(r.shift || '1st Shift')} | Semester: ${String(r.semester || 'N/A')}`,
             )
             .join('\n')
         : '';
 
-      const systemInstruction = `You are the CampusOS AI Campus Assistant, helping students, teachers, and administrators navigate campus life, class schedules, and official announcements.
+      const campusKnowledge = formatCampusKnowledgeForAI();
+      const nowDhaka = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Asia/Dhaka',
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      }).format(new Date());
 
+      const systemInstruction = `You are the official BSPI AI Campus Assistant for Bangladesh Sweden Polytechnic Institute (BSPI), Kaptai (${CAMPUS_LINKS.officialWebsite}). You help BSPI students, teachers, and administrators with class routines, shift schedules (1st Shift & 2nd Shift), BTEB academic info, and official notices.
+
+Current Date & Day in Bangladesh (Asia/Dhaka): ${nowDhaka}
 ${profileText}
 
-Current Official Notices:
-${noticesList || 'No notices currently posted.'}
+${campusKnowledge}
 
-Current Class Routines:
-${routinesList || 'No class routines currently scheduled.'}
+Live CampusOS Notices (from Firestore):
+${noticesList || 'No notices currently posted in CampusOS.'}
 
-Guidelines:
-- Answer directly, clearly, and concisely using the live notices and class routines above whenever relevant.
-- If the user asks about classes, prioritize their department unless they ask about another department.
-- If information is not present in the live campus records, state that clearly instead of fabricating dates, room numbers, or policies.
-- Use plain text or clean markdown bullet lists for readability.`;
+Live CampusOS Class Routines (from Firestore):
+${routinesList || 'No class routines currently scheduled in CampusOS.'}
+
+Language & Formatting Rules (CRITICAL):
+- ALWAYS reply in simple, fluent, warm, and polite Bengali (সহজ, প্রাঞ্জল ও ভদ্র বাংলায় উত্তর দাও).
+- If the user writes in Bengali OR in Banglish (Bengali written using English/Latin letters, such as "amar ajke ki class ache?", "exam notice ta bolo", "1st shift er routine dao"), understand the Banglish accurately and ALWAYS respond in Bengali script (বাংলা অক্ষরে).
+- Even if the user asks a regular question in English, reply in natural Bengali unless the user EXPLICITLY requests English (e.g., "answer in English", "reply in English", "write in English").
+- Use clean Markdown formatting (**bold** for times, subjects, room numbers, shifts, and important dates; clean bullet lists or numbered steps) so answers render neatly inside cards.
+
+Source Priority & Strict Honesty Rules (MOST IMPORTANT):
+1. Prioritize the BSPI Campus Knowledge Base above (including ${CAMPUS_LINKS.officialWebsite}) and the Live CampusOS Notices & Class Routines provided above as your primary source of truth.
+2. When the user asks about classes or schedule, prioritize their own Technology/Department, Shift, and Semester unless they ask about another department or shift.
+3. NEVER invent, guess, or fabricate any notice, exam date, form fill-up deadline, result date, class time, teacher name, or room number that is NOT explicitly present in the Live CampusOS Notices, Live Class Routines, or Campus Knowledge Base above.
+4. If the requested specific notice, exam date, routine, or live campus update is missing from the data above, honestly and politely tell the user in Bengali:
+   - তথ্যটি বর্তমানে CampusOS সিস্টেমে পাওয়া যায়নি (বা যুক্ত করা হয়নি)।
+   - যাচাই করার জন্য সরাসরি BSPI-এর অফিশিয়াল ওয়েবসাইট [bspi.polytech.gov.bd](${CAMPUS_LINKS.officialWebsite}) (অথবা নোটিশ বোর্ড: ${CAMPUS_LINKS.officialNotices}) দেখতে এবং প্রয়োজনে সংশ্লিষ্ট ডিপার্টমেন্ট অফিসে যোগাযোগ করতে পরামর্শ দাও।`;
 
       try {
         const history = sanitizedMessages.slice(0, -1).map((m) => ({
@@ -289,17 +446,23 @@ Guidelines:
           parts: [{ text: m.text.slice(0, 4000) }],
         }));
 
-        const chat = ai.chats.create({
-          model: 'gemini-4-hydrogen',
-          config: { systemInstruction },
-          history,
+        const response = await runGeminiWithRetry(async (model) => {
+          const chat = ai.chats.create({
+            model,
+            config: { systemInstruction },
+            history,
+          });
+
+          return chat.sendMessage({
+            message: latest.text.slice(0, 4000),
+          });
         });
 
-        const response = await chat.sendMessage({
-          message: latest.text.slice(0, 4000),
+        res.json({
+          reply:
+            response.text?.trim() ||
+            'দুঃখিত, এই মুহূর্তে উত্তর তৈরি করা যায়নি। অনুগ্রহ করে আবার প্রশ্ন করুন।',
         });
-
-        res.json({ reply: response.text ?? 'No response generated.' });
       } catch (err) {
         handleGeminiError(err, res);
       }
@@ -450,16 +613,22 @@ Guidelines:
           text: `Document Title: ${note.title} (${note.subject} - ${note.department})\n\nStudent Question: ${question.trim().slice(0, 3000)}`,
         };
 
-        const response = await ai.models.generateContent({
-          model: 'gemini-4-hydrogen',
-          contents: { parts: [docPart, promptPart] },
-          config: {
-            systemInstruction:
-              'You are an expert academic study tutor. Answer questions strictly based on the attached study document. Cite specific sections, definitions, or formulas from the document when helpful, and clearly note if the document does not cover part of the question.',
-          },
-        });
+        const response = await runGeminiWithRetry((model) =>
+          ai.models.generateContent({
+            model,
+            contents: { parts: [docPart, promptPart] },
+            config: {
+              systemInstruction:
+                'You are an expert academic study tutor for BSPI students. Answer questions strictly based on the attached study document. Cite specific sections, definitions, or formulas from the document when helpful, and clearly note if the document does not cover part of the question. Respond in clear, polite Bengali if the user asks in Bengali or Banglish (unless they explicitly ask for English).',
+            },
+          }),
+        );
 
-        res.json({ answer: response.text ?? 'Unable to generate an answer.' });
+        res.json({
+          answer:
+            response.text?.trim() ||
+            'দুঃখিত, ডকুমেন্ট থেকে উত্তর তৈরি করা যায়নি।',
+        });
       } catch (err) {
         handleGeminiError(err, res);
       }

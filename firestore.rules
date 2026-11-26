@@ -57,27 +57,73 @@ service cloud.firestore {
       return val is string && val in ['student', 'teacher', 'admin'];
     }
 
+    function isValidShift(val) {
+      return val is string && val in ['1st Shift', '2nd Shift'];
+    }
+
+    function isValidSemester(val) {
+      return val is string && val in [
+        '1st Semester',
+        '2nd Semester',
+        '3rd Semester',
+        '4th Semester',
+        '5th Semester',
+        '6th Semester',
+        '7th Semester',
+        '8th Semester'
+      ];
+    }
+
+    function isValidNoticeCategory(val) {
+      return val is string && val in [
+        'Academic',
+        'Exam',
+        'Admission',
+        'Stipend/Upobritti',
+        'General'
+      ];
+    }
+
     function isValidWeekday(val) {
       return val is string && val in [
+        'Sunday',
         'Monday',
         'Tuesday',
         'Wednesday',
         'Thursday',
-        'Friday',
         'Saturday',
-        'Sunday'
+        'Friday'
       ];
+    }
+
+    function isValidBookmarkList(val) {
+      return val is list
+        && val.size() <= 100
+        && (val.size() == 0 || (val[0] is string && val[0].size() >= 1 && val[0].size() <= 128));
     }
 
     function isValidProfile(data) {
       return data.keys().hasAll(['uid', 'full_name', 'role', 'department', 'email', 'created_at'])
-        && data.keys().hasOnly(['uid', 'full_name', 'role', 'department', 'email', 'created_at'])
+        && data.keys().hasOnly([
+          'uid',
+          'full_name',
+          'role',
+          'department',
+          'email',
+          'created_at',
+          'shift',
+          'semester',
+          'bookmarked_notices'
+        ])
         && isValidId(data.uid)
         && data.full_name is string && data.full_name.size() >= 1 && data.full_name.size() <= 120
         && isValidRole(data.role)
         && data.department is string && data.department.size() >= 1 && data.department.size() <= 100
         && data.email is string && data.email.size() >= 3 && data.email.size() <= 200
-        && data.created_at is timestamp;
+        && data.created_at is timestamp
+        && (!('shift' in data) || isValidShift(data.shift))
+        && (!('semester' in data) || isValidSemester(data.semester))
+        && (!('bookmarked_notices' in data) || isValidBookmarkList(data.bookmarked_notices));
     }
 
     function isValidNotice(data) {
@@ -93,6 +139,8 @@ service cloud.firestore {
         && data.keys().hasOnly([
           'title',
           'content',
+          'category',
+          'is_urgent',
           'created_by',
           'author_name',
           'author_role',
@@ -101,6 +149,8 @@ service cloud.firestore {
         ])
         && data.title is string && data.title.size() >= 1 && data.title.size() <= 240
         && data.content is string && data.content.size() >= 1 && data.content.size() <= 10000
+        && (!('category' in data) || isValidNoticeCategory(data.category))
+        && (!('is_urgent' in data) || data.is_urgent is bool)
         && isValidId(data.created_by)
         && data.author_name is string && data.author_name.size() >= 1 && data.author_name.size() <= 120
         && isValidRole(data.author_role)
@@ -126,6 +176,8 @@ service cloud.firestore {
           'teacher_name',
           'room',
           'department',
+          'shift',
+          'semester',
           'created_by',
           'created_at'
         ])
@@ -135,6 +187,8 @@ service cloud.firestore {
         && data.teacher_name is string && data.teacher_name.size() >= 1 && data.teacher_name.size() <= 120
         && data.room is string && data.room.size() >= 1 && data.room.size() <= 60
         && data.department is string && data.department.size() >= 1 && data.department.size() <= 100
+        && (!('shift' in data) || isValidShift(data.shift))
+        && (!('semester' in data) || isValidSemester(data.semester))
         && isValidId(data.created_by)
         && data.created_at is timestamp;
     }
@@ -160,7 +214,13 @@ service cloud.firestore {
           || (
             isOwner(profileId)
             && incoming().role == existing().role
-            && incoming().diff(existing()).affectedKeys().hasOnly(['full_name', 'department'])
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'full_name',
+              'department',
+              'shift',
+              'semester',
+              'bookmarked_notices'
+            ])
           )
         );
 
@@ -183,7 +243,7 @@ service cloud.firestore {
         && isValidNotice(incoming())
         && incoming().created_by == existing().created_by
         && incoming().created_at == existing().created_at
-        && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'content'])
+        && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'content', 'category', 'is_urgent'])
         && (isAdmin() || (isTeacher() && existing().created_by == request.auth.uid));
 
       allow delete: if isSignedIn()
@@ -213,7 +273,9 @@ service cloud.firestore {
           'subject',
           'teacher_name',
           'room',
-          'department'
+          'department',
+          'shift',
+          'semester'
         ])
         && isStaffOrAdmin();
 

@@ -15,6 +15,8 @@ import {
   deleteLostFoundItem,
   updateLostFoundStatus,
 } from '../lib/api';
+import { CardsGridSkeleton } from './Skeletons';
+import { useToast } from './ToastProvider';
 
 interface LostFoundPanelProps {
   profile: UserProfile;
@@ -25,9 +27,9 @@ interface LostFoundPanelProps {
 }
 
 const CATEGORIES = [
-  'ID Card & Documents',
-  'Electronics',
-  'Books & Notebooks',
+  'ID Card & Admit Card',
+  'Electronics & Calculators',
+  'Books & Lab Manuals',
   'Keys & Wallets',
   'Bags & Accessories',
   'Other',
@@ -40,6 +42,7 @@ export function LostFoundPanel({
   loading,
   onRefresh,
 }: LostFoundPanelProps) {
+  const { showToast } = useToast();
   const [filter, setFilter] = useState<'all' | 'lost' | 'found' | 'resolved'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [showForm, setShowForm] = useState(false);
@@ -84,16 +87,21 @@ export function LostFoundPanel({
     setSubmitting(true);
     setError(null);
     try {
-      await createLostFoundItem(accessToken, {
+      const created = await createLostFoundItem(accessToken, {
         type,
         title: title.trim(),
         category,
         description: description.trim(),
         location: location.trim(),
-        contactInfo: contactInfo.trim() || 'Campus Security Desk',
+        contactInfo: contactInfo.trim() || 'BSPI Registrar / Security Desk',
         reporterName: profile.full_name,
       });
 
+      showToast({
+        type: 'success',
+        title: type === 'lost' ? 'Lost item reported' : 'Found item posted',
+        description: created.title,
+      });
       setTitle('');
       setLocation('');
       setContactInfo('');
@@ -101,9 +109,10 @@ export function LostFoundPanel({
       setShowForm(false);
       await onRefresh();
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'Unable to post Lost & Found report.',
-      );
+      const msg =
+        err instanceof Error ? err.message : 'Unable to post Lost & Found report.';
+      setError(msg);
+      showToast({ type: 'error', title: 'Report failed', description: msg });
     } finally {
       setSubmitting(false);
     }
@@ -111,37 +120,52 @@ export function LostFoundPanel({
 
   async function handleToggleStatus(item: LostFoundReport) {
     setError(null);
+    const nextStatus = item.status === 'open' ? 'resolved' : 'open';
     try {
-      await updateLostFoundStatus(
-        accessToken,
-        item.id,
-        item.status === 'open' ? 'resolved' : 'open',
-      );
+      await updateLostFoundStatus(accessToken, item.id, nextStatus);
       await onRefresh();
+      showToast({
+        type: 'success',
+        title: nextStatus === 'resolved' ? 'Marked as resolved' : 'Report reopened',
+        description: item.title,
+      });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to update item status.');
+      const msg =
+        err instanceof Error ? err.message : 'Unable to update item status.';
+      setError(msg);
+      showToast({ type: 'error', title: 'Status update failed', description: msg });
     }
   }
 
-  async function handleDelete(id: string) {
+  async function handleDelete(item: LostFoundReport) {
     setError(null);
     try {
-      await deleteLostFoundItem(accessToken, id);
+      await deleteLostFoundItem(accessToken, item.id);
       await onRefresh();
+      showToast({
+        type: 'info',
+        title: 'Report removed',
+        description: item.title,
+      });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to delete item.');
+      const msg = err instanceof Error ? err.message : 'Unable to delete item.';
+      setError(msg);
+      showToast({ type: 'error', title: 'Delete failed', description: msg });
     }
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+          <p className="text-xs font-medium text-slate-500">
+            BSPI Kaptai · Campus Helpdesk & Workshops
+          </p>
+          <h1 className="mt-0.5 text-2xl font-bold tracking-tight text-slate-900">
             Campus Lost & Found
           </h1>
           <p className="mt-1 text-sm text-slate-600">
-            Report misplaced belongings or items turned in across academic buildings.
+            Report misplaced ID cards, calculators, or items turned in across workshops and buildings.
           </p>
         </div>
 
@@ -165,7 +189,7 @@ export function LostFoundPanel({
       {showForm && (
         <form
           onSubmit={handleSubmit}
-          className="bg-white border border-slate-200 rounded-xl p-5 space-y-4"
+          className="bg-white/95 backdrop-blur-md border border-slate-200 rounded-xl shadow-xs p-5 space-y-4"
         >
           <div className="flex items-center justify-between">
             <h2 className="text-base font-semibold text-slate-900">
@@ -225,7 +249,7 @@ export function LostFoundPanel({
                 required
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g., Silver Scientific Calculator"
+                placeholder="e.g., Casio fx-991EX Calculator"
                 className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
               />
             </div>
@@ -266,7 +290,7 @@ export function LostFoundPanel({
                 required
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}
-                placeholder="Main Library 2nd Floor Quiet Zone"
+                placeholder="CST Lab 02 or Swedish Mechanical Workshop"
                 className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
               />
             </div>
@@ -283,7 +307,7 @@ export function LostFoundPanel({
                 type="text"
                 value={contactInfo}
                 onChange={(e) => setContactInfo(e.target.value)}
-                placeholder="Student Helpdesk or Campus Email"
+                placeholder="BSPI Security Desk or Dept. Office"
                 className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
               />
             </div>
@@ -302,7 +326,7 @@ export function LostFoundPanel({
               required
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Color, brand, stickers, or time it was noticed..."
+              placeholder="Color, roll number sticker, or shift timing when noticed..."
               className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
             />
           </div>
@@ -327,11 +351,11 @@ export function LostFoundPanel({
       )}
 
       {/* Filter Toolbar */}
-      <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg w-fit">
+      <div className="bg-white/85 backdrop-blur-md border border-slate-200/90 rounded-xl shadow-xs p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg w-fit overflow-x-auto">
           {(
             [
-              { key: 'all', label: 'All Open & Resolved' },
+              { key: 'all', label: 'All Items' },
               { key: 'lost', label: 'Lost' },
               { key: 'found', label: 'Found' },
               { key: 'resolved', label: 'Resolved' },
@@ -366,22 +390,15 @@ export function LostFoundPanel({
 
       {/* Items List */}
       {loading ? (
-        <div className="grid md:grid-cols-2 gap-4">
-          {[1, 2].map((i) => (
-            <div
-              key={i}
-              className="bg-white border border-slate-200 rounded-xl p-6 h-40 animate-pulse"
-            />
-          ))}
-        </div>
+        <CardsGridSkeleton />
       ) : filteredItems.length === 0 ? (
-        <div className="bg-white border border-slate-200 rounded-xl p-12 text-center">
+        <div className="bg-white/85 backdrop-blur-md border border-slate-200/90 rounded-xl p-12 text-center">
           <PackageSearch className="w-8 h-8 text-slate-300 mx-auto mb-3" />
           <h2 className="text-base font-semibold text-slate-900">
             No Lost & Found reports in this view
           </h2>
           <p className="mt-1.5 text-sm text-slate-500 max-w-md mx-auto">
-            Report a misplaced item or something found on campus so students and staff can reconnect with it quickly.
+            Report a misplaced item or something found on campus so BSPI students and staff can reconnect with it quickly.
           </p>
           {!showForm && (
             <button
@@ -401,7 +418,7 @@ export function LostFoundPanel({
             return (
               <article
                 key={item.id}
-                className="bg-white border border-slate-200 rounded-xl p-5 flex flex-col justify-between gap-4"
+                className="bg-white/85 backdrop-blur-md border border-slate-200/90 rounded-xl shadow-xs p-5 flex flex-col justify-between gap-4 transition-all duration-150 hover:border-slate-300"
               >
                 <div>
                   <div className="flex items-start justify-between gap-3">
@@ -437,14 +454,14 @@ export function LostFoundPanel({
                         <button
                           type="button"
                           onClick={() => void handleToggleStatus(item)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer whitespace-nowrap"
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer whitespace-nowrap"
                         >
                           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
                           {item.status === 'open' ? 'Mark Resolved' : 'Reopen'}
                         </button>
                         <button
                           type="button"
-                          onClick={() => void handleDelete(item.id)}
+                          onClick={() => void handleDelete(item)}
                           className="p-1.5 rounded-lg text-slate-400 hover:text-red-700 hover:bg-red-50 cursor-pointer"
                           title="Delete report"
                           aria-label="Delete report"

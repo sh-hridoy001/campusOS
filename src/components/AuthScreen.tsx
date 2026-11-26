@@ -3,6 +3,8 @@ import {
   AlertCircle,
   BookOpen,
   Building2,
+  Clock,
+  ExternalLink,
   GraduationCap,
   Lock,
   Mail,
@@ -24,7 +26,16 @@ import {
   handleFirestoreError,
   OperationType,
 } from '../lib/firebase';
-import { DEPARTMENTS, type UserRole } from '../types';
+import { BSPI_INSTITUTE } from '../data/bspi';
+import {
+  BSPI_DEPARTMENTS,
+  SEMESTERS,
+  SHIFTS,
+  type SemesterType,
+  type ShiftType,
+  type UserRole,
+} from '../types';
+import { useToast } from './ToastProvider';
 
 interface AuthScreenProps {
   onProfileCreated?: () => void;
@@ -39,30 +50,33 @@ const ROLE_OPTIONS: Array<{
   {
     value: 'student',
     label: 'Student',
-    description: 'View schedules, AI notice summaries & PDF study tools',
+    description: 'View shift routines, bookmark notices & AI PDF Q&A',
     icon: GraduationCap,
   },
   {
     value: 'teacher',
     label: 'Teacher',
-    description: 'Publish notices, manage class routines & share notes',
+    description: 'Publish notices, manage shift routines & share PDFs',
     icon: BookOpen,
   },
   {
     value: 'admin',
     label: 'Admin',
-    description: 'Full campus oversight across departments & boards',
+    description: 'Full BSPI campus oversight across departments',
     icon: ShieldCheck,
   },
 ];
 
 export function AuthScreen({ onProfileCreated }: AuthScreenProps) {
+  const { showToast } = useToast();
   const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [role, setRole] = useState<UserRole>('student');
-  const [department, setDepartment] = useState<string>(DEPARTMENTS[0]);
+  const [department, setDepartment] = useState<string>(BSPI_DEPARTMENTS[0]);
+  const [shift, setShift] = useState<ShiftType>('1st Shift');
+  const [semester, setSemester] = useState<SemesterType>('1st Semester');
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -73,8 +87,15 @@ export function AuthScreen({ onProfileCreated }: AuthScreenProps) {
     setGoogleLoading(true);
     try {
       await signInWithPopup(auth, googleProvider);
+      showToast({
+        type: 'success',
+        title: 'Signed in with Google',
+        description: 'Loading your BSPI Kaptai workspace.',
+      });
     } catch (err) {
-      setError(formatFirebaseError(err));
+      const msg = formatFirebaseError(err);
+      setError(msg);
+      showToast({ type: 'error', title: 'Google Sign-In failed', description: msg });
     } finally {
       setGoogleLoading(false);
     }
@@ -98,6 +119,11 @@ export function AuthScreen({ onProfileCreated }: AuthScreenProps) {
     try {
       if (mode === 'login') {
         await signInWithEmailAndPassword(auth, email.trim(), password);
+        showToast({
+          type: 'success',
+          title: 'Welcome back to CampusOS',
+          description: 'Signed in to BSPI Kaptai portal.',
+        });
       } else {
         const cleanName = fullName.trim().slice(0, 120);
         const cleanEmail = email.trim().slice(0, 200);
@@ -118,6 +144,9 @@ export function AuthScreen({ onProfileCreated }: AuthScreenProps) {
             full_name: cleanName,
             role,
             department,
+            shift,
+            semester,
+            bookmarked_notices: [],
             email: cleanEmail,
             created_at: serverTimestamp(),
           });
@@ -129,10 +158,21 @@ export function AuthScreen({ onProfileCreated }: AuthScreenProps) {
           );
         }
 
+        showToast({
+          type: 'success',
+          title: 'Campus account created',
+          description: `${department} · ${shift}`,
+        });
         onProfileCreated?.();
       }
     } catch (err) {
-      setError(formatFirebaseError(err));
+      const msg = formatFirebaseError(err);
+      setError(msg);
+      showToast({
+        type: 'error',
+        title: mode === 'login' ? 'Sign-in failed' : 'Registration failed',
+        description: msg,
+      });
     } finally {
       setLoading(false);
     }
@@ -141,7 +181,7 @@ export function AuthScreen({ onProfileCreated }: AuthScreenProps) {
   return (
     <div className="min-h-screen grid lg:grid-cols-2 items-stretch bg-slate-50">
       {/* Left Form Panel */}
-      <div className="flex flex-col justify-between px-6 py-8 sm:px-12 lg:px-16 xl:px-24 bg-white border-r border-slate-200">
+      <div className="flex flex-col justify-between px-6 py-8 sm:px-12 lg:px-16 xl:px-20 bg-white/95 backdrop-blur-md border-r border-slate-200/80">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-blue-700 text-white flex items-center justify-center font-display font-bold text-sm">
@@ -151,27 +191,36 @@ export function AuthScreen({ onProfileCreated }: AuthScreenProps) {
               CampusOS
             </span>
           </div>
-          <span className="text-xs text-slate-500 font-medium whitespace-nowrap">
-            Academic Portal
-          </span>
+          <a
+            href={BSPI_INSTITUTE.websiteUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-slate-600 hover:text-blue-700 font-medium whitespace-nowrap transition-colors"
+          >
+            <span>BSPI Kaptai</span>
+            <ExternalLink className="w-3 h-3" />
+          </a>
         </div>
 
-        <div className="w-full max-w-md mx-auto my-10">
-          <div className="mb-7">
+        <div className="w-full max-w-md mx-auto my-8">
+          <div className="mb-6">
+            <p className="text-xs font-medium text-blue-700 mb-1">
+              {BSPI_INSTITUTE.fullName} · {BSPI_INSTITUTE.location}
+            </p>
             <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 text-balance">
               {mode === 'login'
                 ? 'Sign in to your campus workspace'
-                : 'Create your campus account'}
+                : 'Create your BSPI campus account'}
             </h1>
             <p className="mt-2 text-sm text-slate-600 leading-relaxed">
               {mode === 'login'
-                ? 'Access department routines, official notices, and Gemini AI study tools.'
-                : 'Select your academic role and department to personalize your workspace.'}
+                ? 'Access 1st & 2nd shift routines, official notices, and Gemini AI study tools.'
+                : 'Choose your technology, shift, and semester to personalize your dashboard.'}
             </p>
           </div>
 
           {/* Segmented Mode Switch */}
-          <div className="grid grid-cols-2 gap-1 p-1 bg-slate-100 rounded-lg mb-6">
+          <div className="grid grid-cols-2 gap-1 p-1 bg-slate-100 rounded-lg mb-5">
             <button
               type="button"
               onClick={() => {
@@ -241,7 +290,7 @@ export function AuthScreen({ onProfileCreated }: AuthScreenProps) {
 
           <div className="my-5 flex items-center gap-3 text-xs text-slate-400">
             <div className="flex-1 h-px bg-slate-200" />
-            <span>or with university email</span>
+            <span>or with email</span>
             <div className="flex-1 h-px bg-slate-200" />
           </div>
 
@@ -263,7 +312,7 @@ export function AuthScreen({ onProfileCreated }: AuthScreenProps) {
                     maxLength={120}
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
-                    placeholder="Dr. Ayesha Rahman"
+                    placeholder="e.g., Tanvir Ahmed"
                     className="w-full pl-10 pr-3.5 py-2.5 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
                   />
                 </div>
@@ -275,7 +324,7 @@ export function AuthScreen({ onProfileCreated }: AuthScreenProps) {
                 htmlFor="auth-email"
                 className="block text-sm font-medium text-slate-700 mb-1.5"
               >
-                University Email
+                Email Address
               </label>
               <div className="relative">
                 <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -286,7 +335,7 @@ export function AuthScreen({ onProfileCreated }: AuthScreenProps) {
                   maxLength={200}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="name@university.edu"
+                  placeholder="student@bspi.polytech.gov.bd"
                   className="w-full pl-10 pr-3.5 py-2.5 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
                 />
               </div>
@@ -357,7 +406,7 @@ export function AuthScreen({ onProfileCreated }: AuthScreenProps) {
                     htmlFor="auth-department"
                     className="block text-sm font-medium text-slate-700 mb-1.5"
                   >
-                    Department
+                    Technology / Department
                   </label>
                   <div className="relative">
                     <Building2 className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -367,9 +416,56 @@ export function AuthScreen({ onProfileCreated }: AuthScreenProps) {
                       onChange={(e) => setDepartment(e.target.value)}
                       className="w-full pl-10 pr-3.5 py-2.5 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
                     >
-                      {DEPARTMENTS.map((dept) => (
+                      {BSPI_DEPARTMENTS.map((dept) => (
                         <option key={dept} value={dept}>
                           {dept}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label
+                      htmlFor="auth-shift"
+                      className="block text-xs font-medium text-slate-700 mb-1.5"
+                    >
+                      Shift
+                    </label>
+                    <div className="relative">
+                      <Clock className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <select
+                        id="auth-shift"
+                        value={shift}
+                        onChange={(e) => setShift(e.target.value as ShiftType)}
+                        className="w-full pl-8 pr-2.5 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
+                      >
+                        {SHIFTS.map((s) => (
+                          <option key={s} value={s}>
+                            {s}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="auth-semester"
+                      className="block text-xs font-medium text-slate-700 mb-1.5"
+                    >
+                      Semester
+                    </label>
+                    <select
+                      id="auth-semester"
+                      value={semester}
+                      onChange={(e) => setSemester(e.target.value as SemesterType)}
+                      className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
+                    >
+                      {SEMESTERS.map((sem) => (
+                        <option key={sem} value={sem}>
+                          {sem}
                         </option>
                       ))}
                     </select>
@@ -395,7 +491,7 @@ export function AuthScreen({ onProfileCreated }: AuthScreenProps) {
         </div>
 
         <p className="text-xs text-slate-500">
-          CampusOS · Intelligent Campus Ecosystem
+          CampusOS · {BSPI_INSTITUTE.shortName} ({BSPI_INSTITUTE.board})
         </p>
       </div>
 
@@ -404,7 +500,7 @@ export function AuthScreen({ onProfileCreated }: AuthScreenProps) {
         {!imgFailed ? (
           <img
             src="/src/assets/images/campus_architecture_hero_1795622865695.jpg"
-            alt="Modern university library and campus courtyard"
+            alt="Modern polytechnic campus library and courtyard"
             referrerPolicy="no-referrer"
             onError={() => setImgFailed(true)}
             className="w-full h-full object-cover"
@@ -412,26 +508,26 @@ export function AuthScreen({ onProfileCreated }: AuthScreenProps) {
         ) : (
           <div className="w-full h-full bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900" />
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/45 to-slate-950/15" />
+        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/92 via-slate-950/50 to-slate-950/20" />
         <div className="absolute inset-x-0 bottom-0 p-12 text-white">
           <p className="text-xs font-medium text-blue-200 tracking-wide mb-3">
-            Unified Academic Operations
+            Est. {BSPI_INSTITUTE.established} · Kaptai, Rangamati · Code {BSPI_INSTITUTE.instituteCode}
           </p>
           <h2 className="text-3xl font-bold tracking-tight leading-snug max-w-lg text-balance">
-            Routines, official notices, and AI-guided study tools in one calm workspace.
+            Bangladesh Sweden Polytechnic Institute, unified in one calm academic portal.
           </h2>
           <div className="mt-6 pt-6 border-t border-white/15 grid grid-cols-3 gap-6 max-w-lg text-sm">
             <div>
-              <p className="font-semibold text-white">Smart Notices</p>
-              <p className="text-xs text-slate-300 mt-1">Instant AI key takeaways</p>
+              <p className="font-semibold text-white">7 Technologies</p>
+              <p className="text-xs text-slate-300 mt-1">CST, Civil, Electrical, Mechanical & more</p>
             </div>
             <div>
-              <p className="font-semibold text-white">Live Routines</p>
-              <p className="text-xs text-slate-300 mt-1">Sorted by day & department</p>
+              <p className="font-semibold text-white">1st & 2nd Shift</p>
+              <p className="text-xs text-slate-300 mt-1">Live class & semester tracking</p>
             </div>
             <div>
-              <p className="font-semibold text-white">PDF Study Q&A</p>
-              <p className="text-xs text-slate-300 mt-1">Ask questions on lecture PDFs</p>
+              <p className="font-semibold text-white">AI Study Tools</p>
+              <p className="text-xs text-slate-300 mt-1">Notice summaries & PDF Q&A</p>
             </div>
           </div>
         </div>

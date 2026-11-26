@@ -1,10 +1,13 @@
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import {ErrorBoundary} from './components/ErrorBoundary.tsx';
+import {ToastProvider} from './components/ToastProvider.tsx';
 import './index.css';
 
 createRoot(document.getElementById('root')!).render(
   <ErrorBoundary>
-    <App />
+    <ToastProvider>
+      <App />
+    </ToastProvider>
   </ErrorBoundary>,
 );

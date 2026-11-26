@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   BookOpen,
@@ -10,7 +10,7 @@ import {
   X,
 } from 'lucide-react';
 import {
-  DEPARTMENTS,
+  BSPI_DEPARTMENTS,
   type StudyNoteMeta,
   type UserProfile,
 } from '../types';
@@ -20,6 +20,9 @@ import {
   fetchStudyNoteBlobUrl,
   uploadStudyNote,
 } from '../lib/api';
+import { MarkdownContent } from './MarkdownContent';
+import { NotesSkeleton } from './Skeletons';
+import { useToast } from './ToastProvider';
 
 interface NotesPanelProps {
   profile: UserProfile;
@@ -27,6 +30,8 @@ interface NotesPanelProps {
   notes: StudyNoteMeta[];
   loading: boolean;
   onRefresh: () => Promise<void>;
+  initialDepartmentFilter?: string | null;
+  onClearInitialDepartment?: () => void;
 }
 
 interface QaEntry {
@@ -60,7 +65,13 @@ export function NotesPanel({
   notes,
   loading,
   onRefresh,
+  initialDepartmentFilter,
+  onClearInitialDepartment,
 }: NotesPanelProps) {
+  const { showToast } = useToast();
+  const [deptFilter, setDeptFilter] = useState<string>(
+    initialDepartmentFilter || 'All',
+  );
   const [showUpload, setShowUpload] = useState(false);
   const [title, setTitle] = useState('');
   const [subject, setSubject] = useState('');
@@ -77,12 +88,29 @@ export function NotesPanel({
   const [qaHistory, setQaHistory] = useState<Record<string, QaEntry[]>>({});
 
   useEffect(() => {
-    if (!activeNote && notes.length > 0) {
-      setActiveNote(notes[0]);
-    } else if (activeNote && !notes.some((n) => n.id === activeNote.id)) {
-      setActiveNote(notes[0] ?? null);
+    if (initialDepartmentFilter) {
+      setDeptFilter(initialDepartmentFilter);
+      onClearInitialDepartment?.();
     }
-  }, [notes, activeNote]);
+  }, [initialDepartmentFilter, onClearInitialDepartment]);
+
+  const filteredNotes = useMemo(() => {
+    if (deptFilter === 'All') return notes;
+    return notes.filter(
+      (n) => n.department.toLowerCase() === deptFilter.toLowerCase(),
+    );
+  }, [notes, deptFilter]);
+
+  useEffect(() => {
+    if (!activeNote && filteredNotes.length > 0) {
+      setActiveNote(filteredNotes[0]);
+    } else if (
+      activeNote &&
+      !filteredNotes.some((n) => n.id === activeNote.id)
+    ) {
+      setActiveNote(filteredNotes[0] ?? null);
+    }
+  }, [filteredNotes, activeNote]);
 
   useEffect(() => {
     let revoked = false;
@@ -142,6 +170,11 @@ export function NotesPanel({
         uploaderName: profile.full_name,
       });
 
+      showToast({
+        type: 'success',
+        title: 'Study PDF uploaded',
+        description: `${created.title} (${created.department})`,
+      });
       setTitle('');
       setSubject('');
       setSelectedFile(null);
@@ -149,21 +182,30 @@ export function NotesPanel({
       await onRefresh();
       setActiveNote(created);
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'Unable to upload study document.',
-      );
+      const msg =
+        err instanceof Error ? err.message : 'Unable to upload study document.';
+      setError(msg);
+      showToast({ type: 'error', title: 'Upload failed', description: msg });
     } finally {
       setUploading(false);
     }
   }
 
-  async function handleDelete(id: string) {
+  async function handleDelete(note: StudyNoteMeta) {
     setError(null);
     try {
-      await deleteStudyNote(accessToken, id);
+      await deleteStudyNote(accessToken, note.id);
       await onRefresh();
+      showToast({
+        type: 'info',
+        title: 'Study document deleted',
+        description: note.title,
+      });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to delete document.');
+      const msg =
+        err instanceof Error ? err.message : 'Unable to delete document.';
+      setError(msg);
+      showToast({ type: 'error', title: 'Delete failed', description: msg });
     }
   }
 
@@ -185,11 +227,12 @@ export function NotesPanel({
       }));
       setQuestion('');
     } catch (err) {
-      setError(
+      const msg =
         err instanceof Error
           ? err.message
-          : 'Failed to analyze document with Gemini AI.',
-      );
+          : 'Failed to analyze document with Gemini AI.';
+      setError(msg);
+      showToast({ type: 'error', title: 'AI analysis failed', description: msg });
     } finally {
       setAsking(false);
     }
@@ -199,24 +242,43 @@ export function NotesPanel({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+          <p className="text-xs font-medium text-slate-500">
+            BSPI Kaptai · BTEB Study Handouts & Notes
+          </p>
+          <h1 className="mt-0.5 text-2xl font-bold tracking-tight text-slate-900">
             PDF Notes & Study Q&A
           </h1>
           <p className="mt-1 text-sm text-slate-600">
-            Upload lecture PDFs or study handouts, preview them inline, and ask Gemini AI targeted questions.
+            Upload lecture PDFs or handouts, preview inline, and ask Gemini AI targeted questions.
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setShowUpload((v) => !v)}
-          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-700 text-white text-sm font-medium hover:bg-blue-800 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-        >
-          <Upload className="w-4 h-4" />
-          Upload Study PDF
-        </button>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <select
+            aria-label="Filter notes by technology"
+            value={deptFilter}
+            onChange={(e) => setDeptFilter(e.target.value)}
+            className="px-3 py-2 text-xs font-medium bg-white/90 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
+          >
+            <option value="All">All Technologies</option>
+            {BSPI_DEPARTMENTS.map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
+          </select>
+
+          <button
+            type="button"
+            onClick={() => setShowUpload((v) => !v)}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-700 text-white text-sm font-medium hover:bg-blue-800 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+          >
+            <Upload className="w-4 h-4" />
+            Upload Study PDF
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -229,11 +291,11 @@ export function NotesPanel({
       {showUpload && (
         <form
           onSubmit={handleUpload}
-          className="bg-white border border-slate-200 rounded-xl p-5 space-y-4"
+          className="bg-white/95 backdrop-blur-md border border-slate-200 rounded-xl shadow-xs p-5 space-y-4"
         >
           <div className="flex items-center justify-between">
             <h2 className="text-base font-semibold text-slate-900">
-              Upload Study Document
+              Upload BSPI Study Document
             </h2>
             <button
               type="button"
@@ -259,7 +321,7 @@ export function NotesPanel({
                 required
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="Week 4: Graph Algorithms"
+                placeholder="Chapter 3: Relational Database Schema"
                 className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
               />
             </div>
@@ -269,7 +331,7 @@ export function NotesPanel({
                 htmlFor="note-subject"
                 className="block text-xs font-medium text-slate-700 mb-1.5"
               >
-                Subject / Course
+                Subject / BTEB Code
               </label>
               <input
                 id="note-subject"
@@ -277,7 +339,7 @@ export function NotesPanel({
                 required
                 value={subject}
                 onChange={(e) => setSubject(e.target.value)}
-                placeholder="CSE-220 Data Structures"
+                placeholder="28551 · Database Management System"
                 className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
               />
             </div>
@@ -287,7 +349,7 @@ export function NotesPanel({
                 htmlFor="note-dept"
                 className="block text-xs font-medium text-slate-700 mb-1.5"
               >
-                Department
+                Technology / Department
               </label>
               <select
                 id="note-dept"
@@ -295,7 +357,7 @@ export function NotesPanel({
                 onChange={(e) => setDepartment(e.target.value)}
                 className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
               >
-                {DEPARTMENTS.map((d) => (
+                {BSPI_DEPARTMENTS.map((d) => (
                   <option key={d} value={d}>
                     {d}
                   </option>
@@ -341,35 +403,48 @@ export function NotesPanel({
       )}
 
       {loading ? (
-        <div className="bg-white border border-slate-200 rounded-xl p-8 animate-pulse h-64" />
-      ) : notes.length === 0 ? (
-        <div className="bg-white border border-slate-200 rounded-xl p-12 text-center">
+        <NotesSkeleton />
+      ) : filteredNotes.length === 0 ? (
+        <div className="bg-white/85 backdrop-blur-md border border-slate-200/90 rounded-xl p-12 text-center">
           <BookOpen className="w-8 h-8 text-slate-300 mx-auto mb-3" />
           <h2 className="text-base font-semibold text-slate-900">
-            No study PDFs uploaded yet
+            {deptFilter === 'All'
+              ? 'No study PDFs uploaded yet'
+              : `No study PDFs found for ${deptFilter}`}
           </h2>
           <p className="mt-1.5 text-sm text-slate-500 max-w-md mx-auto">
-            Upload a lecture slide deck, syllabus, or textbook chapter in PDF format to view it inline and ask Gemini AI questions about its contents.
+            Upload a BTEB syllabus, lab manual, or lecture handout in PDF format to view it inline and ask Gemini AI questions.
           </p>
-          <button
-            type="button"
-            onClick={() => setShowUpload(true)}
-            className="mt-4 px-4 py-2 rounded-lg bg-blue-700 text-white text-xs font-medium hover:bg-blue-800 cursor-pointer"
-          >
-            Upload First Study PDF
-          </button>
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2.5">
+            {deptFilter !== 'All' && (
+              <button
+                type="button"
+                onClick={() => setDeptFilter('All')}
+                className="px-4 py-2 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"
+              >
+                Show All Technologies
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setShowUpload(true)}
+              className="px-4 py-2 rounded-lg bg-blue-700 text-white text-xs font-medium hover:bg-blue-800 cursor-pointer"
+            >
+              Upload Study PDF
+            </button>
+          </div>
         </div>
       ) : (
         <div className="grid lg:grid-cols-12 gap-6 items-start">
           {/* Left 4 cols: Library List */}
-          <div className="lg:col-span-4 bg-white border border-slate-200 rounded-xl overflow-hidden">
-            <div className="px-4 py-3.5 border-b border-slate-200">
+          <div className="lg:col-span-4 bg-white/85 backdrop-blur-md border border-slate-200/90 rounded-xl shadow-xs overflow-hidden">
+            <div className="px-4 py-3.5 border-b border-slate-200/80">
               <h2 className="text-sm font-semibold text-slate-900 tabular-nums">
-                Study Library ({notes.length})
+                Study Library ({filteredNotes.length})
               </h2>
             </div>
-            <div className="divide-y divide-slate-200 max-h-[600px] overflow-y-auto">
-              {notes.map((note) => {
+            <div className="divide-y divide-slate-200/80 max-h-[600px] overflow-y-auto">
+              {filteredNotes.map((note) => {
                 const isSelected = activeNote?.id === note.id;
                 const canDelete =
                   note.uploadedBy === profile.uid ||
@@ -379,7 +454,7 @@ export function NotesPanel({
                   <div
                     key={note.id}
                     className={`p-4 transition-colors ${
-                      isSelected ? 'bg-blue-50/70' : 'hover:bg-slate-50'
+                      isSelected ? 'bg-blue-50/70' : 'hover:bg-slate-50/80'
                     }`}
                   >
                     <div className="flex items-start justify-between gap-2">
@@ -402,7 +477,7 @@ export function NotesPanel({
                       {canDelete && (
                         <button
                           type="button"
-                          onClick={() => void handleDelete(note.id)}
+                          onClick={() => void handleDelete(note)}
                           className="p-1.5 rounded-md text-slate-400 hover:text-red-700 hover:bg-red-50 transition-colors shrink-0 cursor-pointer"
                           title="Delete document"
                           aria-label="Delete document"
@@ -421,8 +496,8 @@ export function NotesPanel({
           {activeNote && (
             <div className="lg:col-span-8 space-y-6">
               {/* Document Preview */}
-              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-                <div className="px-5 py-3.5 border-b border-slate-200 flex items-center justify-between gap-4">
+              <div className="bg-white/85 backdrop-blur-md border border-slate-200/90 rounded-xl shadow-xs overflow-hidden">
+                <div className="px-5 py-3.5 border-b border-slate-200/80 flex items-center justify-between gap-4">
                   <div className="min-w-0">
                     <h2 className="text-sm font-semibold text-slate-900 truncate">
                       {activeNote.title}
@@ -435,7 +510,7 @@ export function NotesPanel({
                     <a
                       href={previewUrl}
                       download={activeNote.fileName}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-medium text-slate-700 hover:bg-slate-50 whitespace-nowrap shrink-0"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 whitespace-nowrap shrink-0"
                     >
                       <Eye className="w-3.5 h-3.5" />
                       Download
@@ -445,7 +520,9 @@ export function NotesPanel({
 
                 <div className="h-[340px] bg-slate-100 flex items-center justify-center">
                   {loadingPreview ? (
-                    <p className="text-xs text-slate-500">Loading document preview...</p>
+                    <p className="text-xs text-slate-500">
+                      Loading document preview...
+                    </p>
                   ) : previewUrl ? (
                     <iframe
                       title={activeNote.title}
@@ -464,8 +541,8 @@ export function NotesPanel({
               </div>
 
               {/* Document AI Q&A */}
-              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-                <div className="px-5 py-3.5 border-b border-slate-200">
+              <div className="bg-white/85 backdrop-blur-md border border-slate-200/90 rounded-xl shadow-xs overflow-hidden">
+                <div className="px-5 py-3.5 border-b border-slate-200/80">
                   <h3 className="text-sm font-semibold text-slate-900">
                     Ask Gemini AI about this document
                   </h3>
@@ -475,13 +552,13 @@ export function NotesPanel({
                   {activeQa.length === 0 ? (
                     <div className="space-y-2">
                       <p className="text-xs text-slate-500">
-                        Try asking a question about key definitions, summaries, or practice problems from {activeNote.title}:
+                        Try asking a question about key definitions, BTEB exam topics, or practice problems from {activeNote.title}:
                       </p>
                       <div className="flex flex-wrap gap-2">
                         {[
                           'Summarize the main concepts covered in this document.',
                           'List key definitions or formulas from this material.',
-                          'Create 3 practice quiz questions with answers from these notes.',
+                          'Create 3 BTEB-style short questions with answers from these notes.',
                         ].map((sample) => (
                           <button
                             key={sample}
@@ -500,8 +577,8 @@ export function NotesPanel({
                         <p className="text-xs font-semibold text-slate-900">
                           Q: {entry.question}
                         </p>
-                        <div className="p-3.5 rounded-lg bg-white border border-slate-200 text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">
-                          {entry.answer}
+                        <div className="p-4 rounded-xl bg-white border border-slate-200/90 shadow-xs">
+                          <MarkdownContent content={entry.answer} />
                         </div>
                       </div>
                     ))
@@ -510,7 +587,7 @@ export function NotesPanel({
 
                 <form
                   onSubmit={handleAskQuestion}
-                  className="p-4 border-t border-slate-200 bg-white flex items-center gap-2.5"
+                  className="p-4 border-t border-slate-200/80 bg-white/95 flex items-center gap-2.5"
                 >
                   <input
                     type="text"

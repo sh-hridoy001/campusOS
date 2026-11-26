@@ -2,12 +2,17 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   AlertCircle,
   Bot,
+  Check,
+  Copy,
   RotateCcw,
   Send,
   User,
 } from 'lucide-react';
+import { BSPI_INSTITUTE } from '../data/bspi';
 import type { ClassRoutine, Notice, UserProfile } from '../types';
 import { sendCampusChatMessage } from '../lib/api';
+import { MarkdownContent } from './MarkdownContent';
+import { useToast } from './ToastProvider';
 
 interface ChatMessage {
   id: string;
@@ -32,22 +37,46 @@ export function AssistantPanel({
   initialPrompt,
   onClearInitialPrompt,
 }: AssistantPanelProps) {
+  const { showToast } = useToast();
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'welcome',
       role: 'assistant',
-      text: `Hello ${profile.full_name}. I have access to ${notices.length} active campus notices and ${routines.length} scheduled class routine entries. Ask me about your ${profile.department} classes, upcoming deadlines, or campus questions.`,
+      text: `স্বাগতম **${profile.full_name}**! আমি **${BSPI_INSTITUTE.shortName} (কাপ্তাই)**-এর AI Campus Assistant। আমার কাছে বর্তমানে **${notices.length}টি অফিসিয়াল নোটিশ** এবং **${routines.length}টি ক্লাস রুটিন স্লটের** তথ্য রয়েছে।
+
+আপনার **${profile.department}**${profile.shift ? ` (**${profile.shift}**` : ''}${profile.semester ? ` · **${profile.semester}**)` : profile.shift ? ')' : ''}-এর বিষয়ে যেকোনো প্রশ্ন **বাংলায়** অথবা **Banglish**-এ করতে পারেন:
+
+* আজকের ও পুরো সপ্তাহের ক্লাস রুটিন ও রুম নম্বর
+* সাম্প্রতিক পরীক্ষা, ভর্তি বা উপবৃত্তি সংক্রান্ত নোটিশ
+* বিটিইবি পড়াশোনা ও ল্যাব ক্লাসের দিকনির্দেশনা`,
     },
   ]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const consumedPromptRef = useRef<string | null>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, sending]);
+
+  async function handleCopyReply(id: string, text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedId(id);
+      window.setTimeout(() => {
+        setCopiedId((curr) => (curr === id ? null : curr));
+      }, 1800);
+    } catch {
+      showToast({
+        type: 'error',
+        title: 'কপি করা যায়নি',
+        description: 'টেক্সট ম্যানুয়ালি সিলেক্ট করে কপি করুন।',
+      });
+    }
+  }
 
   async function submitMessage(textToSend: string) {
     const trimmed = textToSend.trim();
@@ -85,11 +114,16 @@ export function AssistantPanel({
         },
       ]);
     } catch (err) {
-      setError(
-        err instanceof Error
+      const msg =
+        err instanceof Error && err.message.trim()
           ? err.message
-          : 'Unable to reach Gemini AI assistant.',
-      );
+          : 'সার্ভার এখন একটু ব্যস্ত আছে, অনুগ্রহ করে কয়েক সেকেন্ড পর আবার চেষ্টা করুন।';
+      setError(msg);
+      showToast({
+        type: 'error',
+        title: 'AI সহকারী সাময়িকভাবে ব্যস্ত',
+        description: msg,
+      });
     } finally {
       setSending(false);
     }
@@ -113,89 +147,124 @@ export function AssistantPanel({
       {
         id: 'welcome',
         role: 'assistant',
-        text: `Conversation cleared. Ask me anything about your ${profile.department} routines, official notices, or campus schedules.`,
+        text: `আগের কথোপকথন মুছে ফেলা হয়েছে। এখন আপনার **${profile.department}**${profile.shift ? ` (${profile.shift})` : ''} ডিপার্টমেন্টের রুটিন, বিএসপিআই নোটিশ বা বিটিইবি পরীক্ষা প্রস্তুতি নিয়ে বাংলায় বা Banglish-এ প্রশ্ন করুন।`,
       },
     ]);
+    showToast({
+      type: 'info',
+      title: 'নতুন চ্যাট শুরু হয়েছে',
+      description: 'আগের কথোপকথন পরিষ্কার করা হয়েছে।',
+    });
   }
 
   const suggestedQuestions = [
-    `What classes do I have in ${profile.department} this week?`,
-    'Summarize the latest notices and any upcoming deadlines.',
-    'Which rooms are used for classes on Monday and Wednesday?',
+    `${profile.department}${profile.shift ? ` (${profile.shift})` : ''}-এ এই সপ্তাহে আমার কী কী ক্লাস আছে?`,
+    'সাম্প্রতিক জরুরি, পরীক্ষা ও উপবৃত্তি নোটিশগুলো সংক্ষেপে বুঝিয়ে দাও।',
+    'আমার ডিপার্টমেন্টের কোন ল্যাব ও কোন শিক্ষকের ক্লাস আছে জানাও।',
   ];
 
   return (
-    <div className="flex flex-col h-[calc(100vh-10.5rem)] min-h-[520px] bg-white border border-slate-200 rounded-xl overflow-hidden">
+    <div className="flex flex-col h-[calc(100vh-13rem)] lg:h-[calc(100vh-10.5rem)] min-h-[480px] bg-white/90 backdrop-blur-md border border-slate-200/90 rounded-2xl shadow-xs overflow-hidden">
       {/* Header */}
-      <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between gap-4">
+      <div className="px-5 py-4 border-b border-slate-200/80 bg-white/95 flex items-center justify-between gap-4">
         <div>
           <h1 className="text-lg font-bold tracking-tight text-slate-900">
-            AI Campus Assistant
+            BSPI AI Campus Assistant
           </h1>
           <p className="text-xs text-slate-500 mt-0.5 tabular-nums">
-            Grounded in {notices.length} notices and {routines.length} routine slots
+            {notices.length}টি নোটিশ ও {routines.length}টি রুটিন স্লটের তথ্যে সমৃদ্ধ · বাংলা ও Banglish সাপোর্টেড
           </p>
         </div>
 
         <button
           type="button"
           onClick={handleReset}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
         >
           <RotateCcw className="w-3.5 h-3.5" />
-          New Chat
+          নতুন চ্যাট
         </button>
       </div>
 
       {/* Chat Transcript */}
-      <div className="flex-1 overflow-y-auto p-5 space-y-5 bg-slate-50/40">
+      <div className="flex-1 overflow-y-auto px-4 py-5 sm:px-6 sm:py-6 space-y-6 bg-slate-50/70">
         {messages.map((msg) => {
           const isUser = msg.role === 'user';
-          return (
-            <div
-              key={msg.id}
-              className={`flex items-start gap-3 ${isUser ? 'justify-end' : 'justify-start'}`}
-            >
-              {!isUser && (
-                <div className="w-8 h-8 rounded-lg bg-blue-700 text-white flex items-center justify-center shrink-0">
-                  <Bot className="w-4 h-4" />
+          const isCopied = copiedId === msg.id;
+
+          if (isUser) {
+            return (
+              <div key={msg.id} className="flex items-start justify-end gap-3">
+                <div className="max-w-xl rounded-2xl rounded-tr-sm px-4 py-3 text-[15px] leading-[1.7] bg-slate-900 text-white shadow-xs whitespace-pre-wrap break-words">
+                  {msg.text}
                 </div>
-              )}
-
-              <div
-                className={`max-w-2xl rounded-xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
-                  isUser
-                    ? 'bg-slate-900 text-white'
-                    : 'bg-white border border-slate-200 text-slate-800'
-                }`}
-              >
-                {msg.text}
-              </div>
-
-              {isUser && (
-                <div className="w-8 h-8 rounded-lg bg-slate-200 text-slate-700 flex items-center justify-center shrink-0">
+                <div className="w-8 h-8 rounded-lg bg-slate-200 text-slate-700 flex items-center justify-center shrink-0 mt-0.5">
                   <User className="w-4 h-4" />
                 </div>
-              )}
+              </div>
+            );
+          }
+
+          return (
+            <div key={msg.id} className="flex items-start justify-start gap-3">
+              <div className="w-8 h-8 rounded-lg bg-blue-700 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
+                <Bot className="w-4 h-4" />
+              </div>
+
+              <div className="group max-w-3xl flex-1 sm:flex-initial bg-white border border-slate-200/90 rounded-2xl rounded-tl-sm shadow-[0_1px_3px_rgba(15,23,42,0.04)] overflow-hidden">
+                <div className="px-4 py-2 border-b border-slate-100 bg-slate-50/60 flex items-center justify-between gap-3">
+                  <span className="text-[11px] font-semibold text-slate-500 tracking-wide">
+                    BSPI AI Assistant
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void handleCopyReply(msg.id, msg.text)}
+                    className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
+                    title="উত্তর কপি করুন"
+                    aria-label="উত্তর কপি করুন"
+                  >
+                    {isCopied ? (
+                      <>
+                        <Check className="w-3 h-3 text-emerald-600" />
+                        <span className="text-emerald-700">কপি হয়েছে</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3 h-3" />
+                        <span>কপি</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                <div className="px-5 py-4">
+                  <MarkdownContent content={msg.text} />
+                </div>
+              </div>
             </div>
           );
         })}
 
         {sending && (
           <div className="flex items-start gap-3">
-            <div className="w-8 h-8 rounded-lg bg-blue-700 text-white flex items-center justify-center shrink-0">
+            <div className="w-8 h-8 rounded-lg bg-blue-700 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
               <Bot className="w-4 h-4" />
             </div>
-            <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-500">
-              Thinking...
+            <div className="bg-white border border-slate-200/90 rounded-2xl rounded-tl-sm px-5 py-3.5 text-sm text-slate-600 shadow-xs flex items-center gap-2.5">
+              <span className="inline-flex items-center gap-1" aria-hidden="true">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-bounce [animation-delay:-0.2s]" />
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-bounce [animation-delay:-0.1s]" />
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-bounce" />
+              </span>
+              <span>উত্তর তৈরি হচ্ছে...</span>
             </div>
           </div>
         )}
 
         {error && (
-          <div className="p-3.5 rounded-lg border border-red-200 bg-red-50 text-red-800 text-xs flex items-start gap-2">
+          <div className="p-4 rounded-xl border border-red-200 bg-red-50 text-red-800 text-sm flex items-start gap-2.5">
             <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-            <span>{error}</span>
+            <span className="leading-relaxed">{error}</span>
           </div>
         )}
 
@@ -203,7 +272,7 @@ export function AssistantPanel({
       </div>
 
       {/* Starter Prompts + Composer */}
-      <div className="border-t border-slate-200 bg-white p-4 space-y-3">
+      <div className="border-t border-slate-200/80 bg-white/95 p-4 sm:px-5 space-y-3">
         {messages.length <= 1 && (
           <div className="flex flex-wrap gap-2">
             {suggestedQuestions.map((q) => (
@@ -211,7 +280,7 @@ export function AssistantPanel({
                 key={q}
                 type="button"
                 onClick={() => void submitMessage(q)}
-                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-blue-50 hover:border-blue-200 text-xs font-medium text-slate-700 hover:text-blue-900 transition-colors cursor-pointer"
+                className="px-3.5 py-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-blue-50 hover:border-blue-200 text-xs font-medium text-slate-700 hover:text-blue-900 transition-colors cursor-pointer text-left leading-relaxed"
               >
                 {q}
               </button>
@@ -230,17 +299,17 @@ export function AssistantPanel({
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask about your class routine, notices, rooms, or campus guidance..."
+            placeholder="আপনার ক্লাস রুটিন, শিফট, নোটিশ বা পড়াশোনা নিয়ে বাংলায় বা Banglish-এ লিখুন..."
             disabled={sending}
-            className="flex-1 px-4 py-2.5 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700 disabled:opacity-60"
+            className="flex-1 px-4 py-2.5 text-[15px] bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700 disabled:opacity-60"
           />
           <button
             type="submit"
             disabled={sending || !input.trim()}
-            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-blue-700 text-white text-sm font-medium hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-blue-700 text-white text-sm font-medium hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap shrink-0 cursor-pointer"
           >
             <Send className="w-4 h-4" />
-            Send
+            পাঠান
           </button>
         </form>
       </div>

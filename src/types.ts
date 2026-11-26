@@ -1,10 +1,60 @@
 export type UserRole = 'student' | 'teacher' | 'admin';
 
+export const BSPI_DEPARTMENTS = [
+  'Computer Science & Technology',
+  'Civil Technology',
+  'Electrical Technology',
+  'Mechanical Technology',
+  'Automobile Technology',
+  'Construction Technology',
+  'Wood Technology',
+  'General / Non-Tech',
+] as const;
+
+export const DEPARTMENTS = BSPI_DEPARTMENTS;
+
+export const SHIFTS = ['1st Shift', '2nd Shift'] as const;
+export type ShiftType = (typeof SHIFTS)[number];
+
+export const SEMESTERS = [
+  '1st Semester',
+  '2nd Semester',
+  '3rd Semester',
+  '4th Semester',
+  '5th Semester',
+  '6th Semester',
+  '7th Semester',
+  '8th Semester',
+] as const;
+export type SemesterType = (typeof SEMESTERS)[number];
+
+export const NOTICE_CATEGORIES = [
+  'Academic',
+  'Exam',
+  'Admission',
+  'Stipend/Upobritti',
+  'General',
+] as const;
+export type NoticeCategory = (typeof NOTICE_CATEGORIES)[number];
+
+export const WEEKDAYS = [
+  'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Saturday',
+  'Friday',
+] as const;
+
 export interface UserProfile {
   uid: string;
   full_name: string;
   role: UserRole;
   department: string;
+  shift?: ShiftType;
+  semester?: SemesterType;
+  bookmarked_notices?: string[];
   email: string;
   created_at?: string;
 }
@@ -13,6 +63,8 @@ export interface Notice {
   id: string;
   title: string;
   content: string;
+  category: NoticeCategory;
+  is_urgent: boolean;
   created_by: string;
   author_name: string;
   author_role: UserRole;
@@ -34,6 +86,8 @@ export interface ClassRoutine {
   teacher_name: string;
   room: string;
   department: string;
+  shift: ShiftType;
+  semester: SemesterType;
   created_by: string;
   created_at?: string;
 }
@@ -69,27 +123,7 @@ export type ActiveTab =
   | 'overview'
   | 'notices'
   | 'routines'
+  | 'directory'
   | 'assistant'
   | 'notes'
   | 'lost-found';
-
-export const DEPARTMENTS = [
-  'Computer Science',
-  'Electrical Engineering',
-  'Business Administration',
-  'Architecture',
-  'Mathematics',
-  'Physics',
-  'Civil Engineering',
-  'English & Humanities',
-] as const;
-
-export const WEEKDAYS = [
-  'Monday',
-  'Tuesday',
-  'Wednesday',
-  'Thursday',
-  'Friday',
-  'Saturday',
-  'Sunday',
-] as const;
