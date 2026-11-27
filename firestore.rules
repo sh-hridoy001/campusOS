@@ -32,25 +32,22 @@ service cloud.firestore {
         && request.auth.token.email_verified == true;
     }
 
-    function hasProfile() {
+    function hasTrustedRoleClaim(roleName) {
       return isSignedIn()
-        && exists(/databases/$(database)/documents/profiles/$(request.auth.uid));
-    }
-
-    function callerRole() {
-      return get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.role;
+        && ('role' in request.auth.token)
+        && request.auth.token.role == roleName;
     }
 
     function isAdmin() {
-      return isTokenAdmin() || (hasProfile() && callerRole() == 'admin');
+      return isTokenAdmin() || hasTrustedRoleClaim('admin');
     }
 
     function isTeacher() {
-      return hasProfile() && callerRole() == 'teacher';
+      return hasTrustedRoleClaim('teacher');
     }
 
     function isStaffOrAdmin() {
-      return isTokenAdmin() || (hasProfile() && callerRole() in ['teacher', 'admin']);
+      return isAdmin() || isTeacher();
     }
 
     function isValidRole(val) {
@@ -195,13 +192,14 @@ service cloud.firestore {
 
     match /profiles/{profileId} {
       allow get: if isSignedIn() && isValidId(profileId) && (isOwner(profileId) || isAdmin());
-      allow list: if isSignedIn() && (resource.data.uid == request.auth.uid || isTokenAdmin());
+      allow list: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
 
       allow create: if isSignedIn()
         && isValidId(profileId)
         && isOwner(profileId)
         && isValidProfile(incoming())
         && incoming().uid == request.auth.uid
+        && incoming().role == 'student'
         && incoming().created_at == request.time;
 
       allow update: if isSignedIn()
@@ -210,7 +208,10 @@ service cloud.firestore {
         && incoming().uid == existing().uid
         && incoming().created_at == existing().created_at
         && (
-          isAdmin()
+          (
+            isAdmin()
+            && !(isOwner(profileId) && incoming().role != existing().role)
+          )
           || (
             isOwner(profileId)
             && incoming().role == existing().role

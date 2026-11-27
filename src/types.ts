@@ -2,16 +2,35 @@ export type UserRole = 'student' | 'teacher' | 'admin';
 
 export const BSPI_DEPARTMENTS = [
   'Computer Science & Technology',
-  'Civil Technology',
   'Electrical Technology',
   'Mechanical Technology',
   'Automobile Technology',
   'Construction Technology',
-  'Wood Technology',
-  'General / Non-Tech',
+  'Civil (Wood) Technology',
 ] as const;
 
+export type BspiDepartmentName = (typeof BSPI_DEPARTMENTS)[number];
 export const DEPARTMENTS = BSPI_DEPARTMENTS;
+
+export type BtebSubjectCategory = 'Core' | 'Related' | 'Attachment';
+
+export interface BtebSubjectItem {
+  code: string;
+  nameEn: string;
+  nameBn: string;
+  credits: number;
+  category: BtebSubjectCategory;
+}
+
+export interface TechnologyBooklist {
+  department: BspiDepartmentName;
+  nameBn: string;
+  techCode: string;
+  shortCode: string;
+  booklistUrl: string;
+  semesterNotes?: Partial<Record<SemesterType, string>>;
+  semesters: Record<SemesterType, BtebSubjectItem[]>;
+}
 
 export const SHIFTS = ['1st Shift', '2nd Shift'] as const;
 export type ShiftType = (typeof SHIFTS)[number];

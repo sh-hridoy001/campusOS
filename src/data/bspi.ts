@@ -3,6 +3,7 @@ import type { ClassRoutine, ShiftType } from '../types';
 export const BSPI_INSTITUTE = {
   shortName: 'BSPI Kaptai',
   fullName: 'Bangladesh Sweden Polytechnic Institute',
+  fullNameBn: 'বাংলাদেশ সুইডেন পলিটেকনিক ইনস্টিটিউট (BSPI), কাপ্তাই',
   location: 'Kaptai, Rangamati-4532, Bangladesh',
   established: '1963',
   board: 'Bangladesh Technical Education Board (BTEB)',
@@ -10,11 +11,107 @@ export const BSPI_INSTITUTE = {
   websiteUrl: 'https://bspi.polytech.gov.bd/',
   noticesUrl: 'https://bspi.polytech.gov.bd/site/view/notices',
   btebUrl: 'https://bteb.gov.bd/',
+  btebNoticesUrl: 'https://bteb.gov.bd/site/view/notices',
   syllabusUrl: 'https://bteb.gov.bd/site/page/4c512445-3d44-4c8d-90ea-e3c20d7a022f',
+  booklistsUrl: 'https://btebresultszone.com/bn/booklists',
   email: 'principal@bspi.polytech.gov.bd',
   phone: '+880 3529-56213',
   officeHours: 'Sunday – Thursday · 08:00 AM – 05:00 PM',
 } as const;
+
+export interface AcademicPortalResource {
+  id: string;
+  source: 'BSPI' | 'BTEB';
+  category: 'Notice' | 'Result' | 'Curriculum' | 'Calendar';
+  title: string;
+  titleBn: string;
+  description: string;
+  url: string;
+  hostLabel: string;
+}
+
+export const BTEB_ACADEMIC_RESOURCES: AcademicPortalResource[] = [
+  {
+    id: 'bteb-notices',
+    source: 'BTEB',
+    category: 'Notice',
+    title: 'BTEB Official Notice Board',
+    titleBn: 'বিটিইবি অফিশিয়াল নোটিশ বোর্ড',
+    description:
+      'Diploma-in-Engineering exam schedules, form fill-up circulars, and board directives.',
+    url: 'https://bteb.gov.bd/site/view/notices',
+    hostLabel: 'bteb.gov.bd/site/view/notices',
+  },
+  {
+    id: 'bteb-results',
+    source: 'BTEB',
+    category: 'Result',
+    title: 'Diploma-in-Engineering Results',
+    titleBn: 'ডিপ্লোমা-ইন-ইঞ্জিনিয়ারিং রেজাল্ট',
+    description:
+      'Official BTEB semester-wise board exam results, GPA/CGPA sheets, and re-scrutiny notices.',
+    url: 'https://bteb.gov.bd/',
+    hostLabel: 'bteb.gov.bd · Result Corner',
+  },
+  {
+    id: 'bteb-booklists',
+    source: 'BTEB',
+    category: 'Curriculum',
+    title: 'Probidhan-2022 Booklists',
+    titleBn: 'প্রবিধান ২০২২ বুকলিস্ট ও কোড',
+    description:
+      'সেমিস্টারভিত্তিক বইয়ের তালিকা ও বিষয় কোড (BSPI-এর ৬টি টেকনোলজির জন্য প্রযোজ্য)।',
+    url: 'https://btebresultszone.com/bn/booklists',
+    hostLabel: 'btebresultszone.com/bn/booklists',
+  },
+  {
+    id: 'bteb-syllabus',
+    source: 'BTEB',
+    category: 'Calendar',
+    title: 'Syllabus & Academic Calendar',
+    titleBn: 'সিলেবাস, প্রবিধান ও ক্যালেন্ডার',
+    description:
+      'অফিশিয়াল সিলেবাস, ক্রেডিট কাঠামো, মার্ক ডিস্ট্রিবিউশন এবং একাডেমিক সময়সূচি।',
+    url: 'https://bteb.gov.bd/site/page/4c512445-3d44-4c8d-90ea-e3c20d7a022f',
+    hostLabel: 'bteb.gov.bd · Curriculum',
+  },
+];
+
+export const BTEB_GRADING_SCALE = [
+  { marks: '80% – 100%', grade: 'A+', gpa: '4.00' },
+  { marks: '75% – 79%', grade: 'A', gpa: '3.75' },
+  { marks: '70% – 74%', grade: 'A-', gpa: '3.50' },
+  { marks: '65% – 69%', grade: 'B+', gpa: '3.25' },
+  { marks: '60% – 64%', grade: 'B', gpa: '3.00' },
+  { marks: '55% – 59%', grade: 'B-', gpa: '2.75' },
+  { marks: '50% – 54%', grade: 'C+', gpa: '2.50' },
+  { marks: '45% – 49%', grade: 'C', gpa: '2.25' },
+  { marks: '40% – 44%', grade: 'D', gpa: '2.00' },
+  { marks: 'Below 40%', grade: 'F', gpa: '0.00' },
+] as const;
+
+export const BTEB_PROBIDHAN_RULES = [
+  {
+    title: '4-Year / 8-Semester Structure',
+    detail:
+      'Semesters 1–7 cover campus theory and workshop/lab practicals; 8th Semester is dedicated to mandatory Industrial Attachment.',
+  },
+  {
+    title: 'Continuous & Board Final Assessment',
+    detail:
+      'Every subject combines Theory Continuous (TC), Theory Final (TF), Practical Continuous (PC), and Practical Final (PF) per BTEB Probidhan-2022.',
+  },
+  {
+    title: 'Class Attendance & Form Fill-up',
+    detail:
+      'Regular attendance in both 1st/2nd shift theory and practical sessions is mandatory for board exam form fill-up eligibility.',
+  },
+  {
+    title: 'CGPA Weighting Across Semesters',
+    detail:
+      'Final Diploma CGPA combines weighted GPAs across all 8 semesters (check Probidhan-2022 circular on bteb.gov.bd for exact semester weight percentages).',
+  },
+] as const;
 
 export const SHIFT_SCHEDULES: Record<
   ShiftType,
@@ -69,114 +166,86 @@ export interface BspiDepartmentInfo {
 export const BSPI_DIRECTORY: BspiDepartmentInfo[] = [
   {
     name: 'Computer Science & Technology',
-    code: '685 / 85',
+    code: '85',
     shortCode: 'CST',
-    wing: 'Academic Building · 2nd & 3rd Floor Labs',
+    wing: 'একাডেমিক ভবন · ২য় ও ৩য় তলা ল্যাব',
     shifts: '1st Shift & 2nd Shift',
-    headTitle: 'Chief Instructor (CST)',
-    contactDesk: 'CST Dept. Office · Software & Networking Lab Wing',
+    headTitle: 'চিফ ইনস্ট্রাক্টর (CST)',
+    contactDesk: 'সফটওয়্যার, ওয়েব ও নেটওয়ার্কিং ল্যাব উইং',
     highlights: [
-      'Software Development, Web & Mobile Apps',
-      'Computer Networking, Hardware & Microprocessor Labs',
-      'BTEB Probidhan-2022 · 8 Semesters',
-    ],
-  },
-  {
-    name: 'Civil Technology',
-    code: '664 / 64',
-    shortCode: 'Civil',
-    wing: 'Civil & Survey Block · Ground Floor',
-    shifts: '1st Shift & 2nd Shift',
-    headTitle: 'Chief Instructor (Civil)',
-    contactDesk: 'Civil Dept. Office · Soil & Materials Testing Lab',
-    highlights: [
-      'Structural Design, AutoCAD & Estimating',
-      'Surveying Fieldwork, Hydraulics & Materials Testing',
-      'BTEB Probidhan-2022 · 8 Semesters',
+      'সফটওয়্যার ডেভেলপমেন্ট, পাইথন, জাভা ও ওয়েব অ্যাপস',
+      'কম্পিউটার নেটওয়ার্কিং, মাইক্রোকন্ট্রোলার ও আইওটি ল্যাব',
+      'BTEB প্রবিধান-২০২২ · ৮ সেমিস্টার',
     ],
   },
   {
     name: 'Electrical Technology',
-    code: '667 / 67',
+    code: '67',
     shortCode: 'ET',
-    wing: 'Electrical Workshop & Machine Wing',
+    wing: 'ইলেকট্রিক্যাল ওয়ার্কশপ ও মেশিন উইং',
     shifts: '1st Shift & 2nd Shift',
-    headTitle: 'Chief Instructor (Electrical)',
-    contactDesk: 'Electrical Dept. Office · Power & Machine Lab',
+    headTitle: 'চিফ ইনস্ট্রাক্টর (Electrical)',
+    contactDesk: 'পাওয়ার, মেশিন ও সার্কিট ল্যাব ডেস্ক',
     highlights: [
-      'Electrical Machines, Power Generation & Distribution',
-      'Industrial Wiring, PLC Automation & Electronics',
-      'BTEB Probidhan-2022 · 8 Semesters',
+      'ইলেকট্রিক্যাল মেশিন, পাওয়ার জেনারেশন ও ডিস্ট্রিবিউশন',
+      'ইন্ডাস্ট্রিয়াল ওয়্যারিং, সুইচগিয়ার ও প্রোটেকশন ল্যাব',
+      'BTEB প্রবিধান-২০২২ · ৮ সেমিস্টার',
     ],
   },
   {
     name: 'Mechanical Technology',
-    code: '670 / 70',
+    code: '70',
     shortCode: 'MT',
-    wing: 'Swedish Mechanical Workshop Complex',
+    wing: 'সুইডিশ মেকানিক্যাল ওয়ার্কশপ কমপ্লেক্স',
     shifts: '1st Shift & 2nd Shift',
-    headTitle: 'Chief Instructor (Mechanical)',
-    contactDesk: 'Mechanical Dept. Office · Machine & Foundry Shop',
+    headTitle: 'চিফ ইনস্ট্রাক্টর (Mechanical)',
+    contactDesk: 'মেশিন শপ, ফাউন্ড্রি ও ওয়েল্ডিং ডেস্ক',
     highlights: [
-      'Machining, CNC Operations & Metallurgy',
-      'Thermodynamics, Fluid Mechanics & CAD/CAM',
-      'BTEB Probidhan-2022 · 8 Semesters',
+      'মেশিনিং, ফাউন্ড্রি, মেটালার্জি ও অ্যাডভান্সড ওয়েল্ডিং',
+      'থার্মোডাইনামিক্স, ফ্লুইড মেকানিক্স ও CAD/CAM',
+      'BTEB প্রবিধান-২০২২ · ৮ সেমিস্টার',
     ],
   },
   {
     name: 'Automobile Technology',
-    code: '662 / 62',
+    code: '62',
     shortCode: 'AT',
-    wing: 'Automobile Hangar & Engine Bay',
+    wing: 'অটোমোবাইল হ্যাঙ্গার ও ইঞ্জিন বে',
     shifts: '1st Shift & 2nd Shift',
-    headTitle: 'Chief Instructor (Automobile)',
-    contactDesk: 'Automobile Dept. Office · Chassis & Diagnostics Bay',
+    headTitle: 'চিফ ইনস্ট্রাক্টর (Automobile)',
+    contactDesk: 'ইঞ্জিন ওভারহলিং ও ডায়াগনস্টিকস বে',
     highlights: [
-      'Internal Combustion Engines, EFI & Hybrid Systems',
-      'Transmission, Suspension & Vehicle Diagnostics',
-      'BTEB Probidhan-2022 · 8 Semesters',
+      'অটোমোটিভ ইঞ্জিন সিস্টেম, EFI ও হাইব্রিড টেকনোলজি',
+      'সাসপেনশন, ব্রেক সিস্টেম ও ভেহিকল ডায়াগনস্টিকস',
+      'BTEB প্রবিধান-২০২২ · ৮ সেমিস্টার',
     ],
   },
   {
     name: 'Construction Technology',
-    code: '688 / 88',
+    code: '88',
     shortCode: 'CT',
-    wing: 'Construction & Drafting Wing',
+    wing: 'কনস্ট্রাকশন ও ড্রাফটিং উইং',
     shifts: '1st Shift & 2nd Shift',
-    headTitle: 'Chief Instructor (Construction)',
-    contactDesk: 'Construction Dept. Office · Masonry & Drafting Lab',
+    headTitle: 'চিফ ইনস্ট্রাক্টর (Construction)',
+    contactDesk: 'ম্যাসনরি, সার্ভেয়িং ও ড্রাফটিং ল্যাব',
     highlights: [
-      'Building Construction Management & Site Supervision',
-      'Quantity Surveying, Foundation Engineering & CAD',
-      'BTEB Probidhan-2022 · 8 Semesters',
+      'বিল্ডিং কনস্ট্রাকশন ম্যানেজমেন্ট ও সাইট সুপারভিশন',
+      'এস্টিমেটিং, সার্ভেয়িং, ফাউন্ডেশন ও ক্যাড (CAD)',
+      'BTEB প্রবিধান-২০২২ · ৮ সেমিস্টার',
     ],
   },
   {
-    name: 'Wood Technology',
-    code: '683 / 83',
-    shortCode: 'WT',
-    wing: 'Swedish Wood & Joinery Workshop',
-    shifts: '1st Shift',
-    headTitle: 'Chief Instructor (Wood)',
-    contactDesk: 'Wood Technology Office · Seasoning & Timber Lab',
-    highlights: [
-      'Timber Seasoning, Furniture Design & Joinery',
-      'Wood Machining, Finishing & Industrial Production',
-      'Heritage Department of BSPI Kaptai',
-    ],
-  },
-  {
-    name: 'General / Non-Tech',
-    code: 'RS / Admin',
-    shortCode: 'Non-Tech',
-    wing: 'Administrative & Main Academic Building',
+    name: 'Civil (Wood) Technology',
+    code: '65',
+    shortCode: 'CWT',
+    wing: 'সুইডিশ সিভিল (উড) ও জয়েনারি ওয়ার্কশপ',
     shifts: '1st Shift & 2nd Shift',
-    headTitle: 'Chief Instructor (Related Subjects)',
-    contactDesk: 'Academic Registrar & Student Helpdesk',
+    headTitle: 'চিফ ইনস্ট্রাক্টর (Civil Wood)',
+    contactDesk: 'সিভিল (উড) অফিস · টিম্বার ও স্ট্রাকচার ল্যাব',
     highlights: [
-      'Mathematics, Physics, Chemistry & Communicative English',
-      'Social Science, Entrepreneurship & Industrial Management',
-      'Supports all 7 Diploma Engineering Technologies',
+      'সিভিল স্ট্রাকচারাল ড্রয়িং, সার্ভেয়িং ও এস্টিমেটিং',
+      'উড ওয়ার্কশপ, টিম্বার প্রসেসিং ও ফার্নিচার ডিজাইন',
+      'BSPI কাপ্তাই-এর বিশেষায়িত ঐতিহ্যবাহী ডিপার্টমেন্ট (কোড ৬৫)',
     ],
   },
 ];

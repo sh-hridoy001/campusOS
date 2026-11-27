@@ -195,9 +195,19 @@ export function OverviewPanel({
             href={BSPI_INSTITUTE.websiteUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-200 bg-white/90 text-slate-700 text-xs font-semibold hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-200 bg-white/95 text-slate-700 text-xs font-semibold hover:bg-slate-50 transition-all duration-150 active:scale-[0.98] whitespace-nowrap shrink-0"
           >
             <span>BSPI Portal</span>
+            <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
+          </a>
+
+          <a
+            href={BSPI_INSTITUTE.btebUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-200 bg-white/95 text-slate-700 text-xs font-semibold hover:bg-slate-50 transition-all duration-150 active:scale-[0.98] whitespace-nowrap shrink-0"
+          >
+            <span>BTEB Portal</span>
             <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
           </a>
 
@@ -205,7 +215,7 @@ export function OverviewPanel({
             <button
               type="button"
               onClick={() => onNavigate('notices')}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm font-medium hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-800 text-sm font-medium hover:bg-slate-50 transition-all duration-150 active:scale-[0.98] whitespace-nowrap shrink-0 cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               Post Notice
@@ -214,7 +224,7 @@ export function OverviewPanel({
           <button
             type="button"
             onClick={() => onNavigate('assistant')}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-700 text-white text-sm font-medium hover:bg-blue-800 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-700 text-white text-sm font-medium hover:bg-blue-800 transition-all duration-150 active:scale-[0.98] whitespace-nowrap shrink-0 cursor-pointer"
           >
             <MessageSquare className="w-4 h-4" />
             Ask AI Assistant
@@ -223,11 +233,11 @@ export function OverviewPanel({
       </div>
 
       {/* 4-Column Glass Metric Strip */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 bg-white/85 backdrop-blur-md border border-slate-200/90 rounded-xl shadow-xs divide-y lg:divide-y-0 lg:divide-x divide-slate-200/80">
+      <div className="grid grid-cols-2 lg:grid-cols-4 bg-white/90 backdrop-blur-md border border-slate-200/90 rounded-xl shadow-xs divide-y lg:divide-y-0 lg:divide-x divide-slate-200/80">
         <button
           type="button"
           onClick={() => onNavigate('routines')}
-          className="p-5 text-left hover:bg-slate-50/80 transition-colors rounded-tl-xl lg:rounded-l-xl cursor-pointer"
+          className="p-5 text-left hover:bg-blue-50/35 transition-all duration-150 active:scale-[0.98] rounded-tl-xl lg:rounded-l-xl cursor-pointer"
         >
           <div className="flex items-center justify-between text-xs font-medium text-slate-500">
             <span>{todayName} Classes</span>
@@ -244,7 +254,7 @@ export function OverviewPanel({
         <button
           type="button"
           onClick={() => onNavigate('notices')}
-          className="p-5 text-left hover:bg-slate-50/80 transition-colors cursor-pointer"
+          className="p-5 text-left hover:bg-blue-50/35 transition-all duration-150 active:scale-[0.98] cursor-pointer"
         >
           <div className="flex items-center justify-between text-xs font-medium text-slate-500">
             <span>Official Notices</span>
@@ -261,7 +271,7 @@ export function OverviewPanel({
         <button
           type="button"
           onClick={() => onNavigate('notes')}
-          className="p-5 text-left hover:bg-slate-50/80 transition-colors cursor-pointer"
+          className="p-5 text-left hover:bg-blue-50/35 transition-all duration-150 active:scale-[0.98] cursor-pointer"
         >
           <div className="flex items-center justify-between text-xs font-medium text-slate-500">
             <span>Study PDFs</span>
@@ -278,7 +288,7 @@ export function OverviewPanel({
           onClick={() =>
             onNavigate(profile.role === 'admin' ? 'directory' : 'lost-found')
           }
-          className="p-5 text-left hover:bg-slate-50/80 transition-colors rounded-br-xl lg:rounded-r-xl cursor-pointer"
+          className="p-5 text-left hover:bg-blue-50/35 transition-all duration-150 active:scale-[0.98] rounded-br-xl lg:rounded-r-xl cursor-pointer"
         >
           <div className="flex items-center justify-between text-xs font-medium text-slate-500">
             {profile.role === 'admin' ? (
@@ -545,26 +555,26 @@ export function OverviewPanel({
             )}
           </section>
 
-          {/* BSPI Directory Quick Card */}
-          <section className="bg-white/85 backdrop-blur-md border border-slate-200/90 rounded-xl shadow-xs p-5 flex items-center justify-between gap-4">
+          {/* BSPI & BTEB Academic Hub Quick Card */}
+          <section className="bg-white/90 backdrop-blur-md border border-slate-200/90 rounded-xl shadow-xs p-5 flex items-center justify-between gap-4">
             <div className="min-w-0">
               <p className="text-xs font-medium text-slate-500">
-                BSPI Campus Directory
+                BSPI & BTEB Academic Hub
               </p>
               <h2 className="text-sm font-semibold text-slate-900 mt-0.5">
-                Technologies, Shift Timings & BTEB Syllabus
+                বোর্ড নোটিশ, রেজাল্ট, প্রবিধান-২০২২ বুকলিস্ট ও ল্যাব
               </h2>
               <p className="text-xs text-slate-500 mt-1">
-                Explore CST, Civil, Electrical, Mechanical, Automobile, Construction & Wood labs.
+                BSPI-এর ৬টি টেকনোলজির সেমিস্টারভিত্তিক বুকলিস্ট, জিপিএ স্কেল ও শিফট সময়সূচি দেখুন।
               </p>
             </div>
             <button
               type="button"
               onClick={() => onNavigate('directory')}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-800 whitespace-nowrap shrink-0 cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-800 transition-all duration-150 active:scale-[0.98] whitespace-nowrap shrink-0 cursor-pointer"
             >
               <Building2 className="w-3.5 h-3.5 text-blue-700" />
-              <span>Open Directory</span>
+              <span>হাব ও বুকলিস্ট</span>
             </button>
           </section>
 
@@ -574,21 +584,21 @@ export function OverviewPanel({
               AI Campus Assistant (বাংলা সাপোর্ট)
             </h2>
             <p className="mt-1 text-xs text-slate-500">
-              লাইভ বিএসপিআই নোটিশ ও শিফট রুটিন থেকে বাংলায় তাৎক্ষণিক উত্তর পান।
+              লাইভ বিএসপিআই নোটিশ, শিফট রুটিন ও প্রবিধান ২০২২ বুকলিস্ট থেকে বাংলায় তাৎক্ষণিক উত্তর পান।
             </p>
             <div className="mt-3.5 space-y-2">
               {[
                 `${profile.department}${profile.shift ? ` (${profile.shift})` : ''}-এ এই সপ্তাহে আমার কী কী ক্লাস আছে?`,
-                'সাম্প্রতিক জরুরি, পরীক্ষা ও উপবৃত্তি নোটিশগুলোর মূল পয়েন্ট বলো।',
+                `${profile.department}-এর ${profile.semester ?? '১ম সেমিস্টার'}-এর প্রবিধান ২০২২ বই ও বিষয় কোড কী কী?`,
                 profile.role === 'teacher'
                   ? 'শিক্ষার্থীদের ল্যাব ও উপস্থিতির জন্য একটি সংক্ষিপ্ত বিএসপিআই নোটিশ লিখে দাও।'
-                  : 'আমার বর্তমান শিফট রুটিন অনুযায়ী বিটিইবি পড়াশোনার একটি সাপ্তাহিক পরিকল্পনা সাজিয়ে দাও।',
+                  : 'সাম্প্রতিক জরুরি, পরীক্ষা ও উপবৃত্তি নোটিশগুলোর মূল পয়েন্ট বলো।',
               ].map((prompt) => (
                 <button
                   key={prompt}
                   type="button"
                   onClick={() => onQuickPromptAssistant(prompt)}
-                  className="w-full text-left px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50/80 hover:bg-blue-50 hover:border-blue-200 text-xs font-medium text-slate-700 hover:text-blue-900 transition-colors flex items-center justify-between gap-2 cursor-pointer"
+                  className="w-full text-left px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50/80 hover:bg-blue-50 hover:border-blue-300/80 hover:shadow-xs text-xs font-medium text-slate-700 hover:text-blue-900 transition-all duration-150 active:scale-[0.98] flex items-center justify-between gap-2 cursor-pointer"
                 >
                   <span className="truncate">{prompt}</span>
                   <ArrowRight className="w-3.5 h-3.5 shrink-0 text-slate-400" />

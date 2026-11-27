@@ -2,8 +2,11 @@ import React, { useMemo, useState } from 'react';
 import {
   AlertCircle,
   AlertTriangle,
+  ArrowUpDown,
   Bookmark,
+  Check,
   CheckCircle2,
+  Copy,
   ExternalLink,
   Plus,
   Search,
@@ -11,6 +14,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   addDoc,
   collection,
@@ -45,6 +49,7 @@ interface NoticesPanelProps {
 }
 
 type CategoryFilter = 'All' | 'Bookmarked' | NoticeCategory;
+type SortMode = 'newest' | 'urgent-first';
 
 export function NoticesPanel({
   profile,
@@ -56,6 +61,9 @@ export function NoticesPanel({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<CategoryFilter>('All');
   const [urgentOnly, setUrgentOnly] = useState(false);
+  const [sortMode, setSortMode] = useState<SortMode>('newest');
+  const [expandedIds, setExpandedIds] = useState<Record<string, boolean>>({});
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const [showComposer, setShowComposer] = useState(false);
   const [title, setTitle] = useState('');
@@ -94,9 +102,14 @@ export function NoticesPanel({
     return counts;
   }, [notices, bookmarkedIds]);
 
+  const urgentCount = useMemo(
+    () => notices.filter((n) => n.is_urgent).length,
+    [notices],
+  );
+
   const filteredNotices = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return notices.filter((n) => {
+    const list = notices.filter((n) => {
       if (selectedCategory === 'Bookmarked' && !bookmarkedIds.has(n.id)) {
         return false;
       }
@@ -121,7 +134,38 @@ export function NoticesPanel({
       }
       return true;
     });
-  }, [notices, selectedCategory, urgentOnly, searchQuery, bookmarkedIds]);
+
+    if (sortMode === 'urgent-first') {
+      return [...list].sort((a, b) => {
+        if (a.is_urgent !== b.is_urgent) return a.is_urgent ? -1 : 1;
+        return (
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+      });
+    }
+    return list;
+  }, [notices, selectedCategory, urgentOnly, searchQuery, bookmarkedIds, sortMode]);
+
+  async function handleCopyNotice(notice: Notice) {
+    try {
+      await navigator.clipboard.writeText(`${notice.title}\n\n${notice.content}`);
+      setCopiedId(notice.id);
+      window.setTimeout(() => {
+        setCopiedId((curr) => (curr === notice.id ? null : curr));
+      }, 1800);
+      showToast({
+        type: 'success',
+        title: 'Notice copied',
+        description: notice.title,
+      });
+    } catch {
+      showToast({
+        type: 'error',
+        title: 'Copy failed',
+        description: 'Clipboard permission was unavailable.',
+      });
+    }
+  }
 
   async function handleToggleBookmark(notice: Notice) {
     if (bookmarkingId) return;
@@ -266,30 +310,43 @@ export function NoticesPanel({
     ...NOTICE_CATEGORIES.map((c) => ({ key: c, label: c })),
   ];
 
+  const hasActiveFilter =
+    Boolean(searchQuery) || selectedCategory !== 'All' || urgentOnly;
+
   return (
     <div className="space-y-6">
-      {/* Header & Controls */}
-      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
+      {/* Header & Official Portal Actions */}
+      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 pb-5 border-b border-slate-200/80">
         <div>
           <p className="text-xs font-medium text-slate-500">
-            {BSPI_INSTITUTE.shortName} · Announcements & Circulars
+            {BSPI_INSTITUTE.shortName} · Official Circulars & Board Notices
           </p>
-          <h1 className="mt-0.5 text-2xl font-bold tracking-tight text-slate-900">
+          <h1 className="mt-1 text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
             Smart Notices Board
           </h1>
-          <p className="mt-1 text-sm text-slate-600">
-            Filter by category, bookmark key circulars, or extract deadlines with Gemini AI.
+          <p className="mt-1.5 text-sm text-slate-600 max-w-2xl">
+            Browse categorized campus notices, bookmark important circulars, and verify live announcements directly on BSPI and BTEB portals.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2">
           <a
             href={BSPI_INSTITUTE.noticesUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-200 bg-white/90 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-colors whitespace-nowrap shrink-0"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-200 bg-white/95 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all duration-150 active:scale-[0.98] whitespace-nowrap shrink-0"
           >
-            <span>Official BSPI Notices</span>
+            <span>BSPI Official Notices</span>
+            <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
+          </a>
+
+          <a
+            href={BSPI_INSTITUTE.btebNoticesUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-200 bg-white/95 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all duration-150 active:scale-[0.98] whitespace-nowrap shrink-0"
+          >
+            <span>BTEB Board Notices</span>
             <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
           </a>
 
@@ -297,7 +354,7 @@ export function NoticesPanel({
             <button
               type="button"
               onClick={() => setShowComposer((v) => !v)}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-700 text-white text-sm font-medium hover:bg-blue-800 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-700 text-white text-sm font-medium hover:bg-blue-800 transition-all duration-150 active:scale-[0.98] whitespace-nowrap shrink-0 cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               New Notice
@@ -306,10 +363,10 @@ export function NoticesPanel({
         </div>
       </div>
 
-      {/* Category Filter Strip + Search */}
-      <div className="bg-white/85 backdrop-blur-md border border-slate-200/90 rounded-xl shadow-xs p-3.5 space-y-3">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg overflow-x-auto">
+      {/* Category Filter Strip, Sort & Search */}
+      <div className="bg-white/90 backdrop-blur-md border border-slate-200/90 rounded-xl shadow-xs p-3.5 space-y-3">
+        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
+          <div className="flex items-center gap-1 p-1 bg-slate-100/90 rounded-lg overflow-x-auto no-scrollbar">
             {filterTabs.map((tab) => {
               const active = selectedCategory === tab.key;
               return (
@@ -317,23 +374,45 @@ export function NoticesPanel({
                   key={tab.key}
                   type="button"
                   onClick={() => setSelectedCategory(tab.key)}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all duration-150 whitespace-nowrap shrink-0 cursor-pointer tabular-nums ${
+                  className={`relative px-3 py-1.5 text-xs font-medium rounded-md transition-colors duration-150 whitespace-nowrap shrink-0 cursor-pointer tabular-nums ${
                     active
-                      ? 'bg-white text-slate-900 shadow-xs'
+                      ? 'text-slate-900'
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  {tab.label} ({categoryCounts[tab.key]})
+                  {active && (
+                    <motion.span
+                      layoutId="notices-filter-tab"
+                      transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                      className="absolute inset-0 rounded-md bg-white shadow-xs"
+                      aria-hidden="true"
+                    />
+                  )}
+                  <span className="relative z-10">
+                    {tab.label} ({categoryCounts[tab.key]})
+                  </span>
                 </button>
               );
             })}
           </div>
 
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() =>
+                setSortMode((m) => (m === 'newest' ? 'urgent-first' : 'newest'))
+              }
+              className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-all duration-150 active:scale-[0.98] whitespace-nowrap shrink-0 cursor-pointer"
+              title="Toggle sort order"
+            >
+              <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
+              <span>{sortMode === 'urgent-first' ? 'Urgent First' : 'Newest First'}</span>
+            </button>
+
             <button
               type="button"
               onClick={() => setUrgentOnly((v) => !v)}
-              className={`inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+              className={`inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-semibold transition-all duration-150 active:scale-[0.98] whitespace-nowrap shrink-0 cursor-pointer tabular-nums ${
                 urgentOnly
                   ? 'border-red-300 bg-red-50 text-red-800'
                   : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
@@ -344,18 +423,28 @@ export function NoticesPanel({
                   urgentOnly ? 'text-red-600' : 'text-slate-400'
                 }`}
               />
-              <span>Urgent Only</span>
+              <span>Urgent ({urgentCount})</span>
             </button>
 
-            <div className="relative sm:w-64">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <div className="relative flex-1 sm:w-64 sm:flex-initial min-w-[180px]">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
-                type="search"
+                type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search title, exam, stipend..."
-                className="w-full pl-9 pr-3 py-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
+                className="w-full pl-9 pr-8 py-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700 transition-colors"
               />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded text-slate-400 hover:text-slate-700 cursor-pointer"
+                  aria-label="Clear search"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -369,140 +458,144 @@ export function NoticesPanel({
       )}
 
       {/* Teacher / Admin Notice Composer */}
-      {canPublish && showComposer && (
-        <form
-          onSubmit={handleCreateNotice}
-          className="bg-white/95 backdrop-blur-md border border-slate-200 rounded-xl shadow-xs p-5 space-y-4"
-        >
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-semibold text-slate-900">
-              Publish Official BSPI Notice
-            </h2>
-            <button
-              type="button"
-              onClick={() => setShowComposer(false)}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
-              aria-label="Close composer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-
-          <div className="grid sm:grid-cols-3 gap-4">
-            <div className="sm:col-span-2">
-              <label
-                htmlFor="notice-title"
-                className="block text-sm font-medium text-slate-700 mb-1.5"
+      <AnimatePresence>
+        {canPublish && showComposer && (
+          <motion.form
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+            onSubmit={handleCreateNotice}
+            className="bg-white/95 backdrop-blur-md border border-slate-200 rounded-xl shadow-xs p-5 space-y-4"
+          >
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-semibold text-slate-900">
+                Publish Official BSPI Notice
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowComposer(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+                aria-label="Close composer"
               >
-                Notice Title
-              </label>
-              <input
-                id="notice-title"
-                type="text"
-                required
-                maxLength={240}
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g., BTEB 4th & 6th Semester Mid-Term Exam Schedule & Upobritti Form Notice"
-                className="w-full px-3.5 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
-              />
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="grid sm:grid-cols-3 gap-4">
+              <div className="sm:col-span-2">
+                <label
+                  htmlFor="notice-title"
+                  className="block text-sm font-medium text-slate-700 mb-1.5"
+                >
+                  Notice Title
+                </label>
+                <input
+                  id="notice-title"
+                  type="text"
+                  required
+                  maxLength={240}
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="e.g., BTEB 4th & 6th Semester Mid-Term Exam Schedule & Upobritti Form Notice"
+                  className="w-full px-3.5 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="notice-category"
+                  className="block text-sm font-medium text-slate-700 mb-1.5"
+                >
+                  Category
+                </label>
+                <select
+                  id="notice-category"
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value as NoticeCategory)}
+                  className="w-full px-3.5 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
+                >
+                  {NOTICE_CATEGORIES.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             <div>
               <label
-                htmlFor="notice-category"
+                htmlFor="notice-content"
                 className="block text-sm font-medium text-slate-700 mb-1.5"
               >
-                Category
+                Announcement Details
               </label>
-              <select
-                id="notice-category"
-                value={category}
-                onChange={(e) => setCategory(e.target.value as NoticeCategory)}
-                className="w-full px-3.5 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
-              >
-                {NOTICE_CATEGORIES.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label
-              htmlFor="notice-content"
-              className="block text-sm font-medium text-slate-700 mb-1.5"
-            >
-              Announcement Details
-            </label>
-            <textarea
-              id="notice-content"
-              required
-              rows={5}
-              maxLength={10000}
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              placeholder="Include exact dates, eligible technologies/semesters, shift timings, and required documents..."
-              className="w-full px-3.5 py-2.5 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
-            />
-          </div>
-
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <label className="inline-flex items-center gap-2 text-sm text-slate-700 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={isUrgent}
-                onChange={(e) => setIsUrgent(e.target.checked)}
-                className="w-4 h-4 rounded border-slate-300 text-red-600 focus:ring-red-600"
+              <textarea
+                id="notice-content"
+                required
+                rows={5}
+                maxLength={10000}
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                placeholder="Include exact dates, eligible technologies/semesters, shift timings, and required documents..."
+                className="w-full px-3.5 py-2.5 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
               />
-              <span className="font-medium">
-                Highlight as urgent / time-sensitive circular
-              </span>
-            </label>
-
-            <div className="flex items-center justify-end gap-2.5">
-              <button
-                type="button"
-                onClick={() => setShowComposer(false)}
-                className="px-4 py-2 rounded-lg border border-slate-300 text-sm font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={submitting}
-                className="px-4 py-2 rounded-lg bg-blue-700 text-white text-sm font-medium hover:bg-blue-800 disabled:opacity-50 cursor-pointer"
-              >
-                {submitting ? 'Publishing...' : 'Publish Notice'}
-              </button>
             </div>
-          </div>
-        </form>
-      )}
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <label className="inline-flex items-center gap-2 text-sm text-slate-700 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={isUrgent}
+                  onChange={(e) => setIsUrgent(e.target.checked)}
+                  className="w-4 h-4 rounded border-slate-300 text-red-600 focus:ring-red-600"
+                />
+                <span className="font-medium">
+                  Highlight as urgent / time-sensitive circular
+                </span>
+              </label>
+
+              <div className="flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setShowComposer(false)}
+                  className="px-4 py-2 rounded-lg border border-slate-300 text-sm font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="px-4 py-2 rounded-lg bg-blue-700 text-white text-sm font-medium hover:bg-blue-800 disabled:opacity-50 active:scale-[0.98] transition-all duration-150 cursor-pointer"
+                >
+                  {submitting ? 'Publishing...' : 'Publish Notice'}
+                </button>
+              </div>
+            </div>
+          </motion.form>
+        )}
+      </AnimatePresence>
 
       {/* Notices Feed */}
       {loading ? (
         <NoticesSkeleton />
       ) : filteredNotices.length === 0 ? (
-        <div className="bg-white/85 backdrop-blur-md border border-slate-200/90 rounded-xl p-10 text-center">
+        <div className="bg-white/90 backdrop-blur-md border border-slate-200/90 rounded-xl p-10 text-center">
           <p className="text-base font-semibold text-slate-900">
-            {searchQuery || selectedCategory !== 'All' || urgentOnly
-              ? 'No matching notices found'
-              : 'No notices published yet'}
+            {hasActiveFilter ? 'No matching notices found' : 'No notices published yet'}
           </p>
           <p className="mt-1.5 text-sm text-slate-500 max-w-md mx-auto">
             {selectedCategory === 'Bookmarked'
               ? 'Bookmark important notices using the save icon to keep them handy here.'
-              : searchQuery || selectedCategory !== 'All' || urgentOnly
+              : hasActiveFilter
                 ? 'Try clearing your category or search filter to see all campus notices.'
                 : canPublish
                   ? 'Publish the first BSPI campus notice for students and instructors.'
-                  : 'Check back soon or open the official BSPI notice archive above.'}
+                  : 'Check back soon or open the official BSPI and BTEB notice archives above.'}
           </p>
           <div className="mt-4 flex flex-wrap items-center justify-center gap-2.5">
-            {(searchQuery || selectedCategory !== 'All' || urgentOnly) && (
+            {hasActiveFilter && (
               <button
                 type="button"
                 onClick={() => {
@@ -532,6 +625,9 @@ export function NoticesPanel({
             const summary = summaries[notice.id];
             const isSummarizing = summarizingId === notice.id;
             const isBookmarked = bookmarkedIds.has(notice.id);
+            const isCopied = copiedId === notice.id;
+            const isLong = notice.content.length > 360;
+            const isExpanded = Boolean(expandedIds[notice.id]);
             const canDelete =
               profile.role === 'admin' ||
               (profile.role === 'teacher' && notice.created_by === profile.uid);
@@ -539,10 +635,10 @@ export function NoticesPanel({
             return (
               <article
                 key={notice.id}
-                className={`bg-white/85 backdrop-blur-md border rounded-xl p-6 transition-all duration-150 hover:shadow-sm ${
+                className={`bg-white/90 backdrop-blur-md border rounded-xl p-6 transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md ${
                   notice.is_urgent
-                    ? 'border-red-300/90 hover:border-red-400'
-                    : 'border-slate-200/90 hover:border-slate-300'
+                    ? 'border-red-300/90 hover:border-red-400 hover:shadow-red-950/[0.05]'
+                    : 'border-slate-200/90 hover:border-blue-300/80 hover:shadow-blue-950/[0.045]'
                 }`}
               >
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
@@ -588,7 +684,7 @@ export function NoticesPanel({
                       </span>
                     </div>
 
-                    <h2 className="text-lg font-semibold text-slate-900">
+                    <h2 className="text-lg font-semibold text-slate-900 leading-snug">
                       {notice.title}
                     </h2>
                   </div>
@@ -596,9 +692,23 @@ export function NoticesPanel({
                   <div className="flex items-center gap-2 shrink-0">
                     <button
                       type="button"
+                      onClick={() => void handleCopyNotice(notice)}
+                      className="p-2 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-slate-900 hover:border-slate-300 transition-all duration-150 active:scale-95 cursor-pointer"
+                      title="Copy notice text"
+                      aria-label="Copy notice text"
+                    >
+                      {isCopied ? (
+                        <Check className="w-4 h-4 text-emerald-700" />
+                      ) : (
+                        <Copy className="w-4 h-4" />
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
                       onClick={() => void handleToggleBookmark(notice)}
                       disabled={bookmarkingId === notice.id}
-                      className={`p-2 rounded-lg border transition-colors cursor-pointer disabled:opacity-50 ${
+                      className={`p-2 rounded-lg border transition-all duration-150 active:scale-95 cursor-pointer disabled:opacity-50 ${
                         isBookmarked
                           ? 'border-blue-300 bg-blue-50 text-blue-700'
                           : 'border-slate-200 bg-white text-slate-500 hover:text-blue-700 hover:border-blue-200'
@@ -615,7 +725,7 @@ export function NoticesPanel({
                       type="button"
                       onClick={() => void handleSummarize(notice)}
                       disabled={isSummarizing}
-                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-200 bg-slate-50 hover:bg-blue-50 hover:border-blue-200 hover:text-blue-800 text-xs font-semibold text-slate-700 transition-colors whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-60"
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-200 bg-slate-50 hover:bg-blue-50 hover:border-blue-200 hover:text-blue-800 text-xs font-semibold text-slate-700 transition-all duration-150 active:scale-[0.98] whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-60"
                     >
                       <Sparkles className="w-3.5 h-3.5 text-blue-700" />
                       {isSummarizing
@@ -630,7 +740,7 @@ export function NoticesPanel({
                         type="button"
                         onClick={() => void handleDeleteNotice(notice)}
                         disabled={deletingId === notice.id}
-                        className="p-2 rounded-lg border border-slate-200 text-slate-500 hover:text-red-700 hover:border-red-200 hover:bg-red-50 transition-colors cursor-pointer disabled:opacity-50"
+                        className="p-2 rounded-lg border border-slate-200 text-slate-500 hover:text-red-700 hover:border-red-200 hover:bg-red-50 transition-all duration-150 active:scale-95 cursor-pointer disabled:opacity-50"
                         title="Delete notice"
                         aria-label="Delete notice"
                       >
@@ -641,49 +751,74 @@ export function NoticesPanel({
                 </div>
 
                 <div className="mt-3.5 text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">
-                  {notice.content}
+                  {isLong && !isExpanded
+                    ? `${notice.content.slice(0, 360)}...`
+                    : notice.content}
                 </div>
 
-                {summary && (
-                  <div className="mt-5 pt-4 border-t border-slate-200/80 bg-slate-50/70 -mx-6 -mb-6 px-6 py-4 rounded-b-xl">
-                    <div className="flex items-center gap-2 text-xs font-semibold text-blue-800 mb-2">
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>AI Summary</span>
-                    </div>
-                    <p className="text-sm font-medium text-slate-900 leading-relaxed">
-                      {summary.summary}
-                    </p>
-
-                    {summary.keyPoints.length > 0 && (
-                      <div className="mt-3">
-                        <p className="text-xs font-semibold text-slate-700 mb-1.5">
-                          Key Points
-                        </p>
-                        <ul className="list-disc pl-5 space-y-1 text-sm text-slate-700">
-                          {summary.keyPoints.map((point, index) => (
-                            <li key={index}>{point}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-
-                    {summary.actionItems.length > 0 && (
-                      <div className="mt-3">
-                        <p className="text-xs font-semibold text-slate-700 mb-1.5">
-                          Deadlines & Action Items
-                        </p>
-                        <ul className="space-y-1 text-sm text-slate-800">
-                          {summary.actionItems.map((action, index) => (
-                            <li key={index} className="flex items-start gap-2">
-                              <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
-                              <span>{action}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                  </div>
+                {isLong && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setExpandedIds((prev) => ({
+                        ...prev,
+                        [notice.id]: !prev[notice.id],
+                      }))
+                    }
+                    className="mt-2 text-xs font-semibold text-blue-700 hover:text-blue-800 cursor-pointer"
+                  >
+                    {isExpanded ? 'Show less' : 'Read full circular'}
+                  </button>
                 )}
+
+                <AnimatePresence>
+                  {summary && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -4 }}
+                      transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                      className="mt-5 pt-4 border-t border-slate-200/80 bg-slate-50/75 -mx-6 -mb-6 px-6 py-4 rounded-b-xl"
+                    >
+                      <div className="flex items-center gap-2 text-xs font-semibold text-blue-800 mb-2">
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>AI Summary</span>
+                      </div>
+                      <p className="text-sm font-medium text-slate-900 leading-relaxed">
+                        {summary.summary}
+                      </p>
+
+                      {summary.keyPoints.length > 0 && (
+                        <div className="mt-3">
+                          <p className="text-xs font-semibold text-slate-700 mb-1.5">
+                            Key Points
+                          </p>
+                          <ul className="list-disc pl-5 space-y-1 text-sm text-slate-700">
+                            {summary.keyPoints.map((point, index) => (
+                              <li key={index}>{point}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {summary.actionItems.length > 0 && (
+                        <div className="mt-3">
+                          <p className="text-xs font-semibold text-slate-700 mb-1.5">
+                            Deadlines & Action Items
+                          </p>
+                          <ul className="space-y-1 text-sm text-slate-800">
+                            {summary.actionItems.map((action, index) => (
+                              <li key={index} className="flex items-start gap-2">
+                                <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
+                                <span>{action}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </article>
             );
           })}

@@ -3,12 +3,17 @@ import {
   AlertCircle,
   CalendarDays,
   Clock,
+  ExternalLink,
+  LayoutGrid,
+  List,
   Pencil,
   Plus,
+  RotateCcw,
   Search,
   Trash2,
   X,
 } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   addDoc,
   collection,
@@ -49,6 +54,8 @@ interface RoutinesPanelProps {
   onClearInitialDepartment?: () => void;
 }
 
+type RoutineViewMode = 'table' | 'grouped';
+
 export function RoutinesPanel({
   profile,
   routines,
@@ -76,6 +83,7 @@ export function RoutinesPanel({
     profile.role === 'student' && profile.semester ? profile.semester : 'All',
   );
   const [searchQuery, setSearchQuery] = useState('');
+  const [viewMode, setViewMode] = useState<RoutineViewMode>('table');
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -181,7 +189,17 @@ export function RoutinesPanel({
     now,
   ]);
 
-  // Identify live class or nearest upcoming class today from filtered list (or user's dept/shift)
+  const groupedByDay = useMemo(() => {
+    const groups = new Map<string, typeof filteredRoutines>();
+    for (const item of filteredRoutines) {
+      const key = item.slot.day;
+      const existing = groups.get(key) ?? [];
+      existing.push(item);
+      groups.set(key, existing);
+    }
+    return Array.from(groups.entries());
+  }, [filteredRoutines]);
+
   const highlightedSlot = useMemo(() => {
     const live = filteredRoutines.find((entry) => entry.status.state === 'live');
     if (live) return live;
@@ -203,7 +221,13 @@ export function RoutinesPanel({
         : profile.semester ?? '1st Semester';
 
     setEditingId(null);
-    setDay(selectedDay === 'All' ? (WEEKDAYS.includes(todayName as (typeof WEEKDAYS)[number]) ? todayName : WEEKDAYS[0]) : selectedDay);
+    setDay(
+      selectedDay === 'All'
+        ? WEEKDAYS.includes(todayName as (typeof WEEKDAYS)[number])
+          ? todayName
+          : WEEKDAYS[0]
+        : selectedDay,
+    );
     setShift(defaultShift);
     setSemester(defaultSem);
     setTimeSlot(SHIFT_SCHEDULES[defaultShift].periods[0]);
@@ -324,6 +348,19 @@ export function RoutinesPanel({
     }
   }
 
+  function applyMyClassPreset() {
+    setSelectedDay('All');
+    setSelectedDept(profile.department);
+    setSelectedShift(profile.shift ?? 'All');
+    setSelectedSemester(profile.semester ?? 'All');
+    setSearchQuery('');
+    showToast({
+      type: 'info',
+      title: 'Showing your class schedule',
+      description: `${profile.department}${profile.shift ? ` · ${profile.shift}` : ''}${profile.semester ? ` · ${profile.semester}` : ''}`,
+    });
+  }
+
   function resetFilters() {
     setSelectedDay('All');
     setSelectedDept('All');
@@ -332,38 +369,97 @@ export function RoutinesPanel({
     setSearchQuery('');
   }
 
+  const isFiltered =
+    selectedDay !== 'All' ||
+    selectedDept !== 'All' ||
+    selectedShift !== 'All' ||
+    selectedSemester !== 'All' ||
+    Boolean(searchQuery);
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 pb-5 border-b border-slate-200/80">
         <div>
           <p className="text-xs font-medium text-slate-500">
             {BSPI_INSTITUTE.shortName} · Sunday – Thursday Academic Timetable
           </p>
-          <h1 className="mt-0.5 text-2xl font-bold tracking-tight text-slate-900">
+          <h1 className="mt-1 text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
             Class Routine Manager
           </h1>
-          <p className="mt-1 text-sm text-slate-600">
-            Filter by technology, 1st/2nd shift, and semester with automatic live class highlighting.
+          <p className="mt-1.5 text-sm text-slate-600 max-w-2xl">
+            Organize and filter schedules across BSPI technologies, 1st & 2nd shifts, and all 8 semesters with live session tracking.
           </p>
         </div>
 
-        {canManage && (
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={openNewForm}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-700 text-white text-sm font-medium hover:bg-blue-800 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            onClick={applyMyClassPreset}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-200 bg-white/95 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-all duration-150 active:scale-[0.98] whitespace-nowrap shrink-0 cursor-pointer"
           >
-            <Plus className="w-4 h-4" />
-            Add Class Slot
+            <CalendarDays className="w-3.5 h-3.5 text-blue-700" />
+            <span>My Class</span>
           </button>
-        )}
+
+          <a
+            href={BSPI_INSTITUTE.websiteUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-slate-200 bg-white/95 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-all duration-150 active:scale-[0.98] whitespace-nowrap shrink-0"
+          >
+            <span>BSPI Portal</span>
+            <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
+          </a>
+
+          {canManage && (
+            <button
+              type="button"
+              onClick={openNewForm}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-700 text-white text-sm font-medium hover:bg-blue-800 transition-all duration-150 active:scale-[0.98] whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              Add Class Slot
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* BSPI Shift Schedule Quick Reference */}
+      <div className="grid sm:grid-cols-2 bg-white/90 backdrop-blur-md border border-slate-200/90 rounded-xl shadow-xs divide-y sm:divide-y-0 sm:divide-x divide-slate-200/80">
+        {SHIFTS.map((s) => {
+          const info = SHIFT_SCHEDULES[s];
+          const activeShift = selectedShift === s;
+          return (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setSelectedShift((curr) => (curr === s ? 'All' : s))}
+              className={`px-5 py-3.5 text-left transition-all duration-150 active:scale-[0.98] flex items-center justify-between gap-4 cursor-pointer first:rounded-t-xl sm:first:rounded-l-xl sm:first:rounded-tr-none last:rounded-b-xl sm:last:rounded-r-xl sm:last:rounded-bl-none ${
+                activeShift ? 'bg-blue-50/75' : 'hover:bg-slate-50/80'
+              }`}
+            >
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-slate-900 flex items-center gap-2">
+                  <span>{info.label}</span>
+                  {activeShift && (
+                    <span className="text-blue-700 font-semibold">· Active Filter</span>
+                  )}
+                </p>
+                <p className="text-xs text-slate-500 mt-0.5 truncate">{info.notes}</p>
+              </div>
+              <span className="font-mono text-xs font-semibold text-blue-800 tabular-nums shrink-0">
+                {info.window}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {/* Live / Upcoming Class Highlight Strip */}
       {highlightedSlot && (
         <div
-          className={`bg-white/90 backdrop-blur-md border rounded-xl p-4 sm:px-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs ${
+          className={`bg-white/95 backdrop-blur-md border rounded-xl p-4 sm:px-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs ${
             highlightedSlot.status.state === 'live'
               ? 'border-emerald-300'
               : 'border-blue-300'
@@ -417,260 +513,321 @@ export function RoutinesPanel({
       )}
 
       {/* Add / Edit Class Form */}
-      {canManage && showForm && (
-        <form
-          onSubmit={handleSaveRoutine}
-          className="bg-white/95 backdrop-blur-md border border-slate-200 rounded-xl shadow-xs p-5 space-y-4"
-        >
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-semibold text-slate-900">
-              {editingId ? 'Edit Class Slot' : 'Add BSPI Class Routine Slot'}
-            </h2>
-            <button
-              type="button"
-              onClick={() => setShowForm(false)}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
-              aria-label="Close form"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div>
-              <label
-                htmlFor="routine-day"
-                className="block text-xs font-medium text-slate-700 mb-1.5"
+      <AnimatePresence>
+        {canManage && showForm && (
+          <motion.form
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+            onSubmit={handleSaveRoutine}
+            className="bg-white/95 backdrop-blur-md border border-slate-200 rounded-xl shadow-xs p-5 space-y-4"
+          >
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-semibold text-slate-900">
+                {editingId ? 'Edit Class Slot' : 'Add BSPI Class Routine Slot'}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowForm(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+                aria-label="Close form"
               >
-                Day of Week
-              </label>
-              <select
-                id="routine-day"
-                value={day}
-                onChange={(e) => setDay(e.target.value)}
-                className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
-              >
-                {WEEKDAYS.map((d) => (
-                  <option key={d} value={d}>
-                    {d}
-                  </option>
-                ))}
-              </select>
+                <X className="w-4 h-4" />
+              </button>
             </div>
 
-            <div>
-              <label
-                htmlFor="routine-shift"
-                className="block text-xs font-medium text-slate-700 mb-1.5"
-              >
-                Shift
-              </label>
-              <select
-                id="routine-shift"
-                value={shift}
-                onChange={(e) => {
-                  const nextShift = e.target.value as ShiftType;
-                  setShift(nextShift);
-                  if (!editingId) {
-                    setTimeSlot(SHIFT_SCHEDULES[nextShift].periods[0]);
-                  }
-                }}
-                className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
-              >
-                {SHIFTS.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label
-                htmlFor="routine-semester"
-                className="block text-xs font-medium text-slate-700 mb-1.5"
-              >
-                Semester
-              </label>
-              <select
-                id="routine-semester"
-                value={semester}
-                onChange={(e) => setSemester(e.target.value as SemesterType)}
-                className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
-              >
-                {SEMESTERS.map((sem) => (
-                  <option key={sem} value={sem}>
-                    {sem}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label
-                htmlFor="routine-dept"
-                className="block text-xs font-medium text-slate-700 mb-1.5"
-              >
-                Technology / Department
-              </label>
-              <select
-                id="routine-dept"
-                value={department}
-                onChange={(e) => setDepartment(e.target.value)}
-                className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
-              >
-                {availableDepartments.map((d) => (
-                  <option key={d} value={d}>
-                    {d}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label
-                htmlFor="routine-time"
-                className="block text-xs font-medium text-slate-700 mb-1.5"
-              >
-                Time Slot
-              </label>
-              <input
-                id="routine-time"
-                type="text"
-                required
-                maxLength={60}
-                value={timeSlot}
-                onChange={(e) => setTimeSlot(e.target.value)}
-                placeholder="08:00 AM - 08:45 AM"
-                className="w-full px-3 py-2 text-sm font-mono bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
-              />
-            </div>
-
-            <div>
-              <label
-                htmlFor="routine-subject"
-                className="block text-xs font-medium text-slate-700 mb-1.5"
-              >
-                Course / Subject
-              </label>
-              <input
-                id="routine-subject"
-                type="text"
-                required
-                maxLength={140}
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-                placeholder="28541 · Java Programming"
-                className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
-              />
-            </div>
-
-            <div>
-              <label
-                htmlFor="routine-teacher"
-                className="block text-xs font-medium text-slate-700 mb-1.5"
-              >
-                Instructor Name
-              </label>
-              <input
-                id="routine-teacher"
-                type="text"
-                required
-                maxLength={120}
-                value={teacherName}
-                onChange={(e) => setTeacherName(e.target.value)}
-                placeholder="Md. Kamrul Hasan"
-                className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
-              />
-            </div>
-
-            <div>
-              <label
-                htmlFor="routine-room"
-                className="block text-xs font-medium text-slate-700 mb-1.5"
-              >
-                Room / Workshop / Lab
-              </label>
-              <input
-                id="routine-room"
-                type="text"
-                required
-                maxLength={60}
-                value={room}
-                onChange={(e) => setRoom(e.target.value)}
-                placeholder="CST-Lab-02"
-                className="w-full px-3 py-2 text-sm font-mono bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
-              />
-            </div>
-          </div>
-
-          {/* Quick BSPI Period Pickers */}
-          <div className="pt-1">
-            <p className="text-xs font-medium text-slate-500 mb-1.5">
-              Quick {shift} Period Presets:
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {SHIFT_SCHEDULES[shift].periods.map((preset) => (
-                <button
-                  key={preset}
-                  type="button"
-                  onClick={() => setTimeSlot(preset)}
-                  className={`px-2.5 py-1 rounded-md border text-xs font-mono tabular-nums transition-colors cursor-pointer ${
-                    timeSlot === preset
-                      ? 'border-blue-700 bg-blue-50 text-blue-800 font-semibold'
-                      : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
-                  }`}
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div>
+                <label
+                  htmlFor="routine-day"
+                  className="block text-xs font-medium text-slate-700 mb-1.5"
                 >
-                  {preset}
-                </button>
-              ))}
-            </div>
-          </div>
+                  Day of Week
+                </label>
+                <select
+                  id="routine-day"
+                  value={day}
+                  onChange={(e) => setDay(e.target.value)}
+                  className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
+                >
+                  {WEEKDAYS.map((d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-          <div className="flex items-center justify-end gap-2.5">
-            <button
-              type="button"
-              onClick={() => setShowForm(false)}
-              className="px-4 py-2 rounded-lg border border-slate-300 text-sm font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="px-4 py-2 rounded-lg bg-blue-700 text-white text-sm font-medium hover:bg-blue-800 disabled:opacity-50 cursor-pointer"
-            >
-              {submitting
-                ? 'Saving...'
-                : editingId
-                  ? 'Save Changes'
-                  : 'Add Class Slot'}
-            </button>
-          </div>
-        </form>
-      )}
+              <div>
+                <label
+                  htmlFor="routine-shift"
+                  className="block text-xs font-medium text-slate-700 mb-1.5"
+                >
+                  Shift
+                </label>
+                <select
+                  id="routine-shift"
+                  value={shift}
+                  onChange={(e) => {
+                    const nextShift = e.target.value as ShiftType;
+                    setShift(nextShift);
+                    if (!editingId) {
+                      setTimeSlot(SHIFT_SCHEDULES[nextShift].periods[0]);
+                    }
+                  }}
+                  className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
+                >
+                  {SHIFTS.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label
+                  htmlFor="routine-semester"
+                  className="block text-xs font-medium text-slate-700 mb-1.5"
+                >
+                  Semester
+                </label>
+                <select
+                  id="routine-semester"
+                  value={semester}
+                  onChange={(e) => setSemester(e.target.value as SemesterType)}
+                  className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
+                >
+                  {SEMESTERS.map((sem) => (
+                    <option key={sem} value={sem}>
+                      {sem}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label
+                  htmlFor="routine-dept"
+                  className="block text-xs font-medium text-slate-700 mb-1.5"
+                >
+                  Technology / Department
+                </label>
+                <select
+                  id="routine-dept"
+                  value={department}
+                  onChange={(e) => setDepartment(e.target.value)}
+                  className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
+                >
+                  {availableDepartments.map((d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label
+                  htmlFor="routine-time"
+                  className="block text-xs font-medium text-slate-700 mb-1.5"
+                >
+                  Time Slot
+                </label>
+                <input
+                  id="routine-time"
+                  type="text"
+                  required
+                  maxLength={60}
+                  value={timeSlot}
+                  onChange={(e) => setTimeSlot(e.target.value)}
+                  placeholder="08:00 AM - 08:45 AM"
+                  className="w-full px-3 py-2 text-sm font-mono bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="routine-subject"
+                  className="block text-xs font-medium text-slate-700 mb-1.5"
+                >
+                  Course / Subject
+                </label>
+                <input
+                  id="routine-subject"
+                  type="text"
+                  required
+                  maxLength={140}
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value)}
+                  placeholder="28541 · Java Programming"
+                  className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="routine-teacher"
+                  className="block text-xs font-medium text-slate-700 mb-1.5"
+                >
+                  Instructor Name
+                </label>
+                <input
+                  id="routine-teacher"
+                  type="text"
+                  required
+                  maxLength={120}
+                  value={teacherName}
+                  onChange={(e) => setTeacherName(e.target.value)}
+                  placeholder="Md. Kamrul Hasan"
+                  className="w-full px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="routine-room"
+                  className="block text-xs font-medium text-slate-700 mb-1.5"
+                >
+                  Room / Workshop / Lab
+                </label>
+                <input
+                  id="routine-room"
+                  type="text"
+                  required
+                  maxLength={60}
+                  value={room}
+                  onChange={(e) => setRoom(e.target.value)}
+                  placeholder="CST-Lab-02"
+                  className="w-full px-3 py-2 text-sm font-mono bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
+                />
+              </div>
+            </div>
+
+            {/* Quick BSPI Period Pickers */}
+            <div className="pt-1">
+              <p className="text-xs font-medium text-slate-500 mb-1.5">
+                Quick {shift} Period Presets:
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {SHIFT_SCHEDULES[shift].periods.map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => setTimeSlot(preset)}
+                    className={`px-2.5 py-1 rounded-md border text-xs font-mono tabular-nums transition-colors cursor-pointer ${
+                      timeSlot === preset
+                        ? 'border-blue-700 bg-blue-50 text-blue-800 font-semibold'
+                        : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    {preset}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setShowForm(false)}
+                className="px-4 py-2 rounded-lg border border-slate-300 text-sm font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="px-4 py-2 rounded-lg bg-blue-700 text-white text-sm font-medium hover:bg-blue-800 disabled:opacity-50 active:scale-[0.98] transition-all duration-150 cursor-pointer"
+              >
+                {submitting
+                  ? 'Saving...'
+                  : editingId
+                    ? 'Save Changes'
+                    : 'Add Class Slot'}
+              </button>
+            </div>
+          </motion.form>
+        )}
+      </AnimatePresence>
 
       {/* Filter Bar */}
-      <div className="bg-white/85 backdrop-blur-md border border-slate-200/90 rounded-xl shadow-xs p-4 space-y-3">
-        {/* Day Segmented Tabs */}
-        <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg overflow-x-auto">
-          {['All', ...WEEKDAYS].map((d) => {
-            const isToday = d.toLowerCase() === todayName.toLowerCase();
-            return (
+      <div className="bg-white/90 backdrop-blur-md border border-slate-200/90 rounded-xl shadow-xs p-4 space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          {/* Day Segmented Tabs */}
+          <div className="flex items-center gap-1 p-1 bg-slate-100/90 rounded-lg overflow-x-auto no-scrollbar">
+            {['All', ...WEEKDAYS].map((d) => {
+              const isToday = d.toLowerCase() === todayName.toLowerCase();
+              const active = selectedDay === d;
+              return (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => setSelectedDay(d)}
+                  className={`relative px-3 py-1.5 text-xs font-medium rounded-md transition-colors duration-150 whitespace-nowrap shrink-0 cursor-pointer ${
+                    active ? 'text-slate-900' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {active && (
+                    <motion.span
+                      layoutId="routines-day-tab"
+                      transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                      className="absolute inset-0 rounded-md bg-white shadow-xs"
+                      aria-hidden="true"
+                    />
+                  )}
+                  <span className="relative z-10">
+                    {d === 'All'
+                      ? 'All Days'
+                      : isToday
+                        ? `${d.slice(0, 3)} (Today)`
+                        : d.slice(0, 3)}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {isFiltered && (
               <button
-                key={d}
                 type="button"
-                onClick={() => setSelectedDay(d)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                  selectedDay === d
+                onClick={resetFilters}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-all duration-150 active:scale-[0.98] whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reset</span>
+              </button>
+            )}
+
+            <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
+              <button
+                type="button"
+                onClick={() => setViewMode('table')}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-md transition-all duration-150 active:scale-[0.98] cursor-pointer ${
+                  viewMode === 'table'
                     ? 'bg-white text-slate-900 shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                {d === 'All' ? 'All Days' : isToday ? `${d.slice(0, 3)} (Today)` : d.slice(0, 3)}
+                <List className="w-3.5 h-3.5" />
+                <span>List</span>
               </button>
-            );
-          })}
+              <button
+                type="button"
+                onClick={() => setViewMode('grouped')}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-md transition-all duration-150 active:scale-[0.98] cursor-pointer ${
+                  viewMode === 'grouped'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+                <span>By Day</span>
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* Technology, Shift, Semester & Search */}
@@ -718,218 +875,327 @@ export function RoutinesPanel({
           </select>
 
           <div className="relative">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
-              type="search"
+              type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Subject, instructor, room..."
-              className="w-full pl-8 pr-3 py-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
+              className="w-full pl-8 pr-8 py-2 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
             />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded text-slate-400 hover:text-slate-700 cursor-pointer"
+                aria-label="Clear search"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Routine Table / Mobile Cards */}
-      <div className="bg-white/85 backdrop-blur-md border border-slate-200/90 rounded-xl shadow-xs overflow-hidden">
-        {loading ? (
+      {/* Routine Table / Day-Grouped View */}
+      {loading ? (
+        <div className="bg-white/90 backdrop-blur-md border border-slate-200/90 rounded-xl shadow-xs overflow-hidden">
           <RoutinesSkeleton />
-        ) : filteredRoutines.length === 0 ? (
-          <div className="p-12 text-center">
-            <CalendarDays className="w-8 h-8 text-slate-300 mx-auto mb-3" />
-            <p className="text-base font-semibold text-slate-900">
-              No classes match this filter
-            </p>
-            <p className="mt-1 text-sm text-slate-500 max-w-md mx-auto">
-              Try viewing All Days, All Shifts, or All Semesters
-              {canManage ? ', or add a new BSPI class slot above.' : '.'}
-            </p>
-            <div className="mt-4 flex flex-wrap items-center justify-center gap-2.5">
+        </div>
+      ) : filteredRoutines.length === 0 ? (
+        <div className="bg-white/90 backdrop-blur-md border border-slate-200/90 rounded-xl shadow-xs p-12 text-center">
+          <CalendarDays className="w-8 h-8 text-slate-300 mx-auto mb-3" />
+          <p className="text-base font-semibold text-slate-900">
+            No classes match this filter
+          </p>
+          <p className="mt-1 text-sm text-slate-500 max-w-md mx-auto">
+            Try viewing All Days, All Shifts, or All Semesters
+            {canManage ? ', or add a new BSPI class slot above.' : '.'}
+          </p>
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2.5">
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="px-4 py-2 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"
+            >
+              Show All Classes
+            </button>
+            {canManage && !showForm && (
               <button
                 type="button"
-                onClick={resetFilters}
-                className="px-4 py-2 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"
+                onClick={openNewForm}
+                className="px-4 py-2 rounded-lg bg-blue-700 text-white text-xs font-medium hover:bg-blue-800 cursor-pointer"
               >
-                Show All Classes
+                Add Class Slot
               </button>
-              {canManage && !showForm && (
-                <button
-                  type="button"
-                  onClick={openNewForm}
-                  className="px-4 py-2 rounded-lg bg-blue-700 text-white text-xs font-medium hover:bg-blue-800 cursor-pointer"
-                >
-                  Add Class Slot
-                </button>
-              )}
-            </div>
+            )}
           </div>
-        ) : (
-          <>
-            {/* Desktop Table */}
-            <div className="hidden md:block overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-slate-200/80 bg-slate-50/90 text-xs font-semibold text-slate-600">
-                    <th className="py-3 px-4">Day & Status</th>
-                    <th className="py-3 px-4">Time Slot</th>
-                    <th className="py-3 px-4">Subject</th>
-                    <th className="py-3 px-4">Technology · Shift · Sem</th>
-                    <th className="py-3 px-4">Instructor</th>
-                    <th className="py-3 px-4 text-right">Room</th>
-                    {canManage && <th className="py-3 px-4 text-right">Actions</th>}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200/80 text-sm">
-                  {filteredRoutines.map(({ slot, status }) => {
+        </div>
+      ) : viewMode === 'grouped' ? (
+        <div className="grid md:grid-cols-2 gap-4">
+          {groupedByDay.map(([dayLabel, entries]) => {
+            const isToday = dayLabel.toLowerCase() === todayName.toLowerCase();
+            return (
+              <section
+                key={dayLabel}
+                className={`bg-white/90 backdrop-blur-md border rounded-xl shadow-xs overflow-hidden transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md hover:shadow-blue-950/[0.045] hover:border-blue-300/80 ${
+                  isToday ? 'border-blue-300' : 'border-slate-200/90'
+                }`}
+              >
+                <div className="px-5 py-3.5 border-b border-slate-200/80 flex items-center justify-between gap-3 bg-slate-50/75">
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-sm font-bold text-slate-900">{dayLabel}</h2>
+                    {isToday && (
+                      <span className="text-xs font-semibold text-blue-700">
+                        · Today
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-xs font-medium text-slate-500 tabular-nums">
+                    {entries.length} {entries.length === 1 ? 'period' : 'periods'}
+                  </span>
+                </div>
+
+                <div className="divide-y divide-slate-200/80">
+                  {entries.map(({ slot, status }) => {
                     const isLive = status.state === 'live';
                     const isUpcoming = status.state === 'upcoming';
                     return (
-                      <tr
+                      <div
                         key={slot.id}
-                        className={`transition-colors ${
+                        className={`px-5 py-3.5 transition-colors ${
                           isLive
-                            ? 'bg-emerald-50/60 hover:bg-emerald-50/90'
+                            ? 'bg-emerald-50/55'
                             : isUpcoming
-                              ? 'bg-blue-50/45 hover:bg-blue-50/80'
+                              ? 'bg-blue-50/40'
                               : 'hover:bg-slate-50/80'
                         }`}
                       >
-                        <td className="py-3 px-4 whitespace-nowrap">
-                          <p className="font-medium text-slate-900">{slot.day}</p>
-                          {(isLive || isUpcoming) && (
-                            <p
-                              className={`text-xs font-semibold tabular-nums mt-0.5 ${
-                                isLive ? 'text-emerald-700' : 'text-blue-700'
-                              }`}
-                            >
-                              {status.label}
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-xs font-mono font-medium text-slate-600 tabular-nums">
+                              {slot.time_slot}
+                              {(isLive || isUpcoming) && (
+                                <span
+                                  className={`ml-2 font-sans font-semibold ${
+                                    isLive ? 'text-emerald-700' : 'text-blue-700'
+                                  }`}
+                                >
+                                  · {status.label}
+                                </span>
+                              )}
                             </p>
-                          )}
-                        </td>
-                        <td className="py-3 px-4 font-mono text-xs text-slate-700 tabular-nums whitespace-nowrap">
-                          {slot.time_slot}
-                        </td>
-                        <td className="py-3 px-4 font-semibold text-slate-900">
-                          {slot.subject}
-                        </td>
-                        <td className="py-3 px-4 text-xs text-slate-600">
-                          <p className="font-medium text-slate-800">{slot.department}</p>
-                          <p className="text-slate-500 mt-0.5 tabular-nums">
-                            {slot.shift} · {slot.semester}
-                          </p>
-                        </td>
-                        <td className="py-3 px-4 text-slate-600 whitespace-nowrap">
-                          {slot.teacher_name}
-                        </td>
-                        <td className="py-3 px-4 font-mono text-xs font-medium text-slate-900 text-right tabular-nums whitespace-nowrap">
-                          {slot.room}
-                        </td>
-                        {canManage && (
-                          <td className="py-3 px-4 text-right whitespace-nowrap">
-                            <div className="inline-flex items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => openEditForm(slot)}
-                                className="p-1.5 rounded-md text-slate-500 hover:text-blue-700 hover:bg-blue-50 transition-colors cursor-pointer"
-                                title="Edit class slot"
-                                aria-label="Edit class slot"
-                              >
-                                <Pencil className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => void handleDeleteRoutine(slot)}
-                                disabled={deletingId === slot.id}
-                                className="p-1.5 rounded-md text-slate-500 hover:text-red-700 hover:bg-red-50 transition-colors cursor-pointer disabled:opacity-50"
-                                title="Delete class slot"
-                                aria-label="Delete class slot"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </td>
-                        )}
-                      </tr>
+                            <p className="mt-1 text-sm font-semibold text-slate-900">
+                              {slot.subject}
+                            </p>
+                            <p className="mt-0.5 text-xs text-slate-500 tabular-nums">
+                              {slot.teacher_name} · {slot.shift} · {slot.semester}
+                            </p>
+                          </div>
+
+                          <div className="text-right shrink-0">
+                            <span className="font-mono text-xs font-semibold text-slate-900 tabular-nums">
+                              {slot.room}
+                            </span>
+                            {canManage && (
+                              <div className="mt-1.5 flex items-center justify-end gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => openEditForm(slot)}
+                                  className="p-1 rounded text-slate-400 hover:text-blue-700 hover:bg-blue-50 cursor-pointer"
+                                  aria-label="Edit class slot"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void handleDeleteRoutine(slot)}
+                                  disabled={deletingId === slot.id}
+                                  className="p-1 rounded text-slate-400 hover:text-red-700 hover:bg-red-50 cursor-pointer disabled:opacity-50"
+                                  aria-label="Delete class slot"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
                     );
                   })}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Mobile Card List */}
-            <div className="md:hidden divide-y divide-slate-200/80">
-              {filteredRoutines.map(({ slot, status }) => {
-                const isLive = status.state === 'live';
-                const isUpcoming = status.state === 'upcoming';
-                return (
-                  <div
-                    key={slot.id}
-                    className={`p-4 space-y-2 ${
-                      isLive
-                        ? 'bg-emerald-50/60'
-                        : isUpcoming
-                          ? 'bg-blue-50/40'
-                          : ''
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <p className="text-xs font-medium text-slate-500 tabular-nums">
-                          {slot.day} · {slot.shift} · {slot.semester}
-                        </p>
-                        <p className="text-sm font-bold text-slate-900 mt-0.5">
-                          {slot.subject}
-                        </p>
-                      </div>
-                      {(isLive || isUpcoming) && (
-                        <span
-                          className={`text-xs font-semibold tabular-nums shrink-0 ${
-                            isLive ? 'text-emerald-700' : 'text-blue-700'
-                          }`}
-                        >
-                          {status.label}
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="flex items-center justify-between text-xs text-slate-600">
-                      <span className="truncate">{slot.teacher_name} · {slot.department}</span>
-                      <span className="font-mono font-semibold text-slate-900 shrink-0 ml-2">
-                        {slot.room}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between pt-1">
-                      <span className="font-mono text-xs text-slate-700 tabular-nums">
+                </div>
+              </section>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="bg-white/90 backdrop-blur-md border border-slate-200/90 rounded-xl shadow-xs overflow-hidden">
+          {/* Desktop Table */}
+          <div className="hidden md:block overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-slate-200/80 bg-slate-50/90 text-xs font-semibold text-slate-600">
+                  <th className="py-3 px-4">Day & Status</th>
+                  <th className="py-3 px-4">Time Slot</th>
+                  <th className="py-3 px-4">Subject</th>
+                  <th className="py-3 px-4">Technology · Shift · Sem</th>
+                  <th className="py-3 px-4">Instructor</th>
+                  <th className="py-3 px-4 text-right">Room</th>
+                  {canManage && <th className="py-3 px-4 text-right">Actions</th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200/80 text-sm">
+                {filteredRoutines.map(({ slot, status }) => {
+                  const isLive = status.state === 'live';
+                  const isUpcoming = status.state === 'upcoming';
+                  return (
+                    <tr
+                      key={slot.id}
+                      className={`transition-colors ${
+                        isLive
+                          ? 'bg-emerald-50/60 hover:bg-emerald-50/90'
+                          : isUpcoming
+                            ? 'bg-blue-50/45 hover:bg-blue-50/80'
+                            : 'hover:bg-slate-50/80'
+                      }`}
+                    >
+                      <td className="py-3 px-4 whitespace-nowrap">
+                        <p className="font-medium text-slate-900">{slot.day}</p>
+                        {(isLive || isUpcoming) && (
+                          <p
+                            className={`text-xs font-semibold tabular-nums mt-0.5 ${
+                              isLive ? 'text-emerald-700' : 'text-blue-700'
+                            }`}
+                          >
+                            {status.label}
+                          </p>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 font-mono text-xs text-slate-700 tabular-nums whitespace-nowrap">
                         {slot.time_slot}
-                      </span>
+                      </td>
+                      <td className="py-3 px-4 font-semibold text-slate-900">
+                        {slot.subject}
+                      </td>
+                      <td className="py-3 px-4 text-xs text-slate-600">
+                        <p className="font-medium text-slate-800">{slot.department}</p>
+                        <p className="text-slate-500 mt-0.5 tabular-nums">
+                          {slot.shift} · {slot.semester}
+                        </p>
+                      </td>
+                      <td className="py-3 px-4 text-slate-600 whitespace-nowrap">
+                        {slot.teacher_name}
+                      </td>
+                      <td className="py-3 px-4 font-mono text-xs font-medium text-slate-900 text-right tabular-nums whitespace-nowrap">
+                        {slot.room}
+                      </td>
                       {canManage && (
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => openEditForm(slot)}
-                            className="px-2.5 py-1 rounded-md border border-slate-200 text-xs font-medium text-slate-700"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void handleDeleteRoutine(slot)}
-                            disabled={deletingId === slot.id}
-                            className="px-2.5 py-1 rounded-md border border-red-200 text-xs font-medium text-red-700"
-                          >
-                            Delete
-                          </button>
-                        </div>
+                        <td className="py-3 px-4 text-right whitespace-nowrap">
+                          <div className="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => openEditForm(slot)}
+                              className="p-1.5 rounded-md text-slate-500 hover:text-blue-700 hover:bg-blue-50 transition-colors cursor-pointer"
+                              title="Edit class slot"
+                              aria-label="Edit class slot"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleDeleteRoutine(slot)}
+                              disabled={deletingId === slot.id}
+                              className="p-1.5 rounded-md text-slate-500 hover:text-red-700 hover:bg-red-50 transition-colors cursor-pointer disabled:opacity-50"
+                              title="Delete class slot"
+                              aria-label="Delete class slot"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
                       )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile Card List */}
+          <div className="md:hidden divide-y divide-slate-200/80">
+            {filteredRoutines.map(({ slot, status }) => {
+              const isLive = status.state === 'live';
+              const isUpcoming = status.state === 'upcoming';
+              return (
+                <div
+                  key={slot.id}
+                  className={`p-4 space-y-2 ${
+                    isLive
+                      ? 'bg-emerald-50/60'
+                      : isUpcoming
+                        ? 'bg-blue-50/40'
+                        : ''
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-xs font-medium text-slate-500 tabular-nums">
+                        {slot.day} · {slot.shift} · {slot.semester}
+                      </p>
+                      <p className="text-sm font-bold text-slate-900 mt-0.5">
+                        {slot.subject}
+                      </p>
                     </div>
+                    {(isLive || isUpcoming) && (
+                      <span
+                        className={`text-xs font-semibold tabular-nums shrink-0 ${
+                          isLive ? 'text-emerald-700' : 'text-blue-700'
+                        }`}
+                      >
+                        {status.label}
+                      </span>
+                    )}
                   </div>
-                );
-              })}
-            </div>
-          </>
-        )}
-      </div>
+
+                  <div className="flex items-center justify-between text-xs text-slate-600">
+                    <span className="truncate">
+                      {slot.teacher_name} · {slot.department}
+                    </span>
+                    <span className="font-mono font-semibold text-slate-900 shrink-0 ml-2">
+                      {slot.room}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="font-mono text-xs text-slate-700 tabular-nums">
+                      {slot.time_slot}
+                    </span>
+                    {canManage && (
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => openEditForm(slot)}
+                          className="px-2.5 py-1 rounded-md border border-slate-200 text-xs font-medium text-slate-700"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleDeleteRoutine(slot)}
+                          disabled={deletingId === slot.id}
+                          className="px-2.5 py-1 rounded-md border border-red-200 text-xs font-medium text-red-700"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

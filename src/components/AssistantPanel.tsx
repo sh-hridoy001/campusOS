@@ -8,6 +8,7 @@ import {
   Send,
   User,
 } from 'lucide-react';
+import { motion } from 'motion/react';
 import { BSPI_INSTITUTE } from '../data/bspi';
 import type { ClassRoutine, Notice, UserProfile } from '../types';
 import { sendCampusChatMessage } from '../lib/api';
@@ -47,8 +48,8 @@ export function AssistantPanel({
 আপনার **${profile.department}**${profile.shift ? ` (**${profile.shift}**` : ''}${profile.semester ? ` · **${profile.semester}**)` : profile.shift ? ')' : ''}-এর বিষয়ে যেকোনো প্রশ্ন **বাংলায়** অথবা **Banglish**-এ করতে পারেন:
 
 * আজকের ও পুরো সপ্তাহের ক্লাস রুটিন ও রুম নম্বর
-* সাম্প্রতিক পরীক্ষা, ভর্তি বা উপবৃত্তি সংক্রান্ত নোটিশ
-* বিটিইবি পড়াশোনা ও ল্যাব ক্লাসের দিকনির্দেশনা`,
+* **প্রবিধান ২০২২** অনুযায়ী BSPI-এর ৬টি টেকনোলজির বুকলিস্ট ও বিষয় কোড
+* সাম্প্রতিক পরীক্ষা, ভর্তি বা উপবৃত্তি সংক্রান্ত নোটিশ`,
     },
   ]);
   const [input, setInput] = useState('');
@@ -159,8 +160,8 @@ export function AssistantPanel({
 
   const suggestedQuestions = [
     `${profile.department}${profile.shift ? ` (${profile.shift})` : ''}-এ এই সপ্তাহে আমার কী কী ক্লাস আছে?`,
-    'সাম্প্রতিক জরুরি, পরীক্ষা ও উপবৃত্তি নোটিশগুলো সংক্ষেপে বুঝিয়ে দাও।',
-    'আমার ডিপার্টমেন্টের কোন ল্যাব ও কোন শিক্ষকের ক্লাস আছে জানাও।',
+    `${profile.department}-এর ${profile.semester ?? '১ম সেমিস্টার'}-এর প্রবিধান ২০২২ বুকলিস্ট ও বিষয় কোড বলো।`,
+    'BSPI কাপ্তাই-তে কোন ৬টি টেকনোলজি রয়েছে এবং সাম্প্রতিক নোটিশগুলো কী কী?',
   ];
 
   return (
@@ -179,7 +180,7 @@ export function AssistantPanel({
         <button
           type="button"
           onClick={handleReset}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all duration-150 active:scale-[0.98] whitespace-nowrap shrink-0 cursor-pointer"
         >
           <RotateCcw className="w-3.5 h-3.5" />
           নতুন চ্যাট
@@ -194,24 +195,36 @@ export function AssistantPanel({
 
           if (isUser) {
             return (
-              <div key={msg.id} className="flex items-start justify-end gap-3">
+              <motion.div
+                key={msg.id}
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                className="flex items-start justify-end gap-3"
+              >
                 <div className="max-w-xl rounded-2xl rounded-tr-sm px-4 py-3 text-[15px] leading-[1.7] bg-slate-900 text-white shadow-xs whitespace-pre-wrap break-words">
                   {msg.text}
                 </div>
                 <div className="w-8 h-8 rounded-lg bg-slate-200 text-slate-700 flex items-center justify-center shrink-0 mt-0.5">
                   <User className="w-4 h-4" />
                 </div>
-              </div>
+              </motion.div>
             );
           }
 
           return (
-            <div key={msg.id} className="flex items-start justify-start gap-3">
+            <motion.div
+              key={msg.id}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+              className="flex items-start justify-start gap-3"
+            >
               <div className="w-8 h-8 rounded-lg bg-blue-700 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
                 <Bot className="w-4 h-4" />
               </div>
 
-              <div className="group max-w-3xl flex-1 sm:flex-initial bg-white border border-slate-200/90 rounded-2xl rounded-tl-sm shadow-[0_1px_3px_rgba(15,23,42,0.04)] overflow-hidden">
+              <div className="group max-w-3xl flex-1 sm:flex-initial bg-white border border-slate-200/90 hover:border-blue-200/80 rounded-2xl rounded-tl-sm shadow-[0_1px_3px_rgba(15,23,42,0.04)] transition-colors duration-150 overflow-hidden">
                 <div className="px-4 py-2 border-b border-slate-100 bg-slate-50/60 flex items-center justify-between gap-3">
                   <span className="text-[11px] font-semibold text-slate-500 tracking-wide">
                     BSPI AI Assistant
@@ -219,7 +232,7 @@ export function AssistantPanel({
                   <button
                     type="button"
                     onClick={() => void handleCopyReply(msg.id, msg.text)}
-                    className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
+                    className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 hover:text-slate-700 transition-colors active:scale-95 cursor-pointer"
                     title="উত্তর কপি করুন"
                     aria-label="উত্তর কপি করুন"
                   >
@@ -241,7 +254,7 @@ export function AssistantPanel({
                   <MarkdownContent content={msg.text} />
                 </div>
               </div>
-            </div>
+            </motion.div>
           );
         })}
 
@@ -280,7 +293,7 @@ export function AssistantPanel({
                 key={q}
                 type="button"
                 onClick={() => void submitMessage(q)}
-                className="px-3.5 py-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-blue-50 hover:border-blue-200 text-xs font-medium text-slate-700 hover:text-blue-900 transition-colors cursor-pointer text-left leading-relaxed"
+                className="px-3.5 py-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-blue-50 hover:border-blue-200 hover:shadow-xs text-xs font-medium text-slate-700 hover:text-blue-900 transition-all duration-150 active:scale-[0.98] cursor-pointer text-left leading-relaxed"
               >
                 {q}
               </button>
@@ -306,7 +319,7 @@ export function AssistantPanel({
           <button
             type="submit"
             disabled={sending || !input.trim()}
-            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-blue-700 text-white text-sm font-medium hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-blue-700 text-white text-sm font-medium hover:bg-blue-800 hover:shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-150 active:scale-[0.98] whitespace-nowrap shrink-0 cursor-pointer"
           >
             <Send className="w-4 h-4" />
             পাঠান

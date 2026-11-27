@@ -64,6 +64,22 @@ import { useToast } from './components/ToastProvider';
 
 const BOOTSTRAPPED_ADMIN_EMAIL = 'sazzadhossainhridoy961@gmail.com';
 
+export function resolveTrustedRoleFromToken(
+  user: Pick<User, 'email' | 'emailVerified'>,
+  claims: Record<string, unknown>,
+): UserRole {
+  const isVerifiedBootstrappedAdmin =
+    user.email?.toLowerCase() === BOOTSTRAPPED_ADMIN_EMAIL &&
+    user.emailVerified === true;
+  if (isVerifiedBootstrappedAdmin || claims.role === 'admin') {
+    return 'admin';
+  }
+  if (claims.role === 'teacher') {
+    return 'teacher';
+  }
+  return 'student';
+}
+
 const NAV_ITEMS: Array<{
   id: ActiveTab;
   label: string;
@@ -73,7 +89,7 @@ const NAV_ITEMS: Array<{
   { id: 'overview', label: 'Overview', shortLabel: 'Home', icon: LayoutDashboard },
   { id: 'notices', label: 'Notices', shortLabel: 'Notices', icon: Megaphone },
   { id: 'routines', label: 'Class Routines', shortLabel: 'Routine', icon: CalendarDays },
-  { id: 'directory', label: 'BSPI Directory', shortLabel: 'Directory', icon: Building2 },
+  { id: 'directory', label: 'BSPI & BTEB Hub', shortLabel: 'Resources', icon: Building2 },
   { id: 'assistant', label: 'AI Assistant', shortLabel: 'AI Chat', icon: MessageSquare },
   { id: 'notes', label: 'PDF Notes', shortLabel: 'PDFs', icon: BookOpen },
   { id: 'lost-found', label: 'Lost & Found', shortLabel: 'Lost/Found', icon: PackageSearch },
@@ -123,6 +139,7 @@ export default function App() {
   const [booting, setBooting] = useState(true);
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
   const [accessToken, setAccessToken] = useState('');
+  const [trustedRole, setTrustedRole] = useState<UserRole>('student');
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
@@ -148,7 +165,6 @@ export default function App() {
 
   // Onboarding fallback state for first-time Google Sign-In
   const [onboardName, setOnboardName] = useState('');
-  const [onboardRole, setOnboardRole] = useState<UserRole>('student');
   const [onboardDept, setOnboardDept] = useState<string>(BSPI_DEPARTMENTS[0]);
   const [onboardShift, setOnboardShift] = useState<ShiftType>('1st Shift');
   const [onboardSemester, setOnboardSemester] =
@@ -170,6 +186,7 @@ export default function App() {
         }
         setFirebaseUser(null);
         setAccessToken('');
+        setTrustedRole('student');
         setProfile(null);
         setProfileLoading(false);
         setNeedsOnboarding(false);
@@ -184,9 +201,16 @@ export default function App() {
       }
 
       try {
-        const token = await user.getIdToken();
-        setAccessToken(token);
+        const tokenResult = await user.getIdTokenResult();
+        setAccessToken(tokenResult.token);
+        setTrustedRole(
+          resolveTrustedRoleFromToken(
+            user,
+            tokenResult.claims as Record<string, unknown>,
+          ),
+        );
       } catch (err) {
+        setTrustedRole(resolveTrustedRoleFromToken(user, {}));
         setDataError(formatFirebaseError(err));
       }
       setFirebaseUser(user);
@@ -218,10 +242,7 @@ export default function App() {
               typeof raw.full_name === 'string'
                 ? raw.full_name
                 : firebaseUser.displayName || 'BSPI Member',
-            role:
-              raw.role === 'teacher' || raw.role === 'admin'
-                ? raw.role
-                : 'student',
+            role: trustedRole,
             department:
               typeof raw.department === 'string'
                 ? raw.department
@@ -271,7 +292,7 @@ export default function App() {
       }
       unsubscribe();
     };
-  }, [firebaseUser]);
+  }, [firebaseUser, trustedRole]);
 
   // Listen to notices & routines only after authentication + profile are ready
   useEffect(() => {
@@ -362,12 +383,10 @@ export default function App() {
       },
     );
 
-    const isTokenAdmin =
-      firebaseUser.email?.toLowerCase() === BOOTSTRAPPED_ADMIN_EMAIL &&
-      firebaseUser.emailVerified === true;
+    const isTrustedAdmin = trustedRole === 'admin';
 
     let unsubProfiles: (() => void) | null = null;
-    if (isTokenAdmin) {
+    if (isTrustedAdmin) {
       unsubProfiles = onSnapshot(
         collection(db, 'profiles'),
         (snapshot) => {
@@ -443,7 +462,7 @@ export default function App() {
         await setDoc(doc(db, 'profiles', firebaseUser.uid), {
           uid: firebaseUser.uid,
           full_name: cleanName,
-          role: onboardRole,
+          role: 'student',
           department: onboardDept,
           shift: onboardShift,
           semester: onboardSemester,
@@ -511,9 +530,15 @@ export default function App() {
     if (!firebaseUser) return;
     setDataError(null);
     try {
-      const freshToken = await firebaseUser.getIdToken(true);
-      setAccessToken(freshToken);
-      await loadServerWorkspaceData(freshToken);
+      const tokenResult = await firebaseUser.getIdTokenResult(true);
+      setAccessToken(tokenResult.token);
+      setTrustedRole(
+        resolveTrustedRoleFromToken(
+          firebaseUser,
+          tokenResult.claims as Record<string, unknown>,
+        ),
+      );
+      await loadServerWorkspaceData(tokenResult.token);
       showToast({
         type: 'success',
         title: 'Workspace synced',
@@ -639,46 +664,25 @@ export default function App() {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label
-                htmlFor="onboard-role"
-                className="block text-xs font-medium text-slate-700 mb-1.5"
-              >
-                Role
-              </label>
-              <select
-                id="onboard-role"
-                value={onboardRole}
-                onChange={(e) => setOnboardRole(e.target.value as UserRole)}
-                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
-              >
-                <option value="student">Student</option>
-                <option value="teacher">Teacher</option>
-                <option value="admin">Admin</option>
-              </select>
-            </div>
-
-            <div>
-              <label
-                htmlFor="onboard-shift"
-                className="block text-xs font-medium text-slate-700 mb-1.5"
-              >
-                Shift
-              </label>
-              <select
-                id="onboard-shift"
-                value={onboardShift}
-                onChange={(e) => setOnboardShift(e.target.value as ShiftType)}
-                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
-              >
-                {SHIFTS.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            </div>
+          <div>
+            <label
+              htmlFor="onboard-shift"
+              className="block text-xs font-medium text-slate-700 mb-1.5"
+            >
+              Shift
+            </label>
+            <select
+              id="onboard-shift"
+              value={onboardShift}
+              onChange={(e) => setOnboardShift(e.target.value as ShiftType)}
+              className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-700"
+            >
+              {SHIFTS.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -775,18 +779,26 @@ export default function App() {
                   key={item.id}
                   type="button"
                   onClick={() => setActiveTab(item.id)}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 whitespace-nowrap cursor-pointer ${
+                  className={`relative w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors duration-150 whitespace-nowrap cursor-pointer active:scale-[0.98] ${
                     active
-                      ? 'bg-blue-50 text-blue-800 shadow-2xs'
+                      ? 'text-blue-800'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/70'
                   }`}
                 >
+                  {active && (
+                    <motion.span
+                      layoutId="desktop-nav-active"
+                      transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                      className="absolute inset-0 rounded-lg bg-blue-50/95 border border-blue-200/70 shadow-2xs"
+                      aria-hidden="true"
+                    />
+                  )}
                   <Icon
-                    className={`w-4 h-4 shrink-0 ${
+                    className={`relative z-10 w-4 h-4 shrink-0 transition-colors duration-150 ${
                       active ? 'text-blue-700' : 'text-slate-400'
                     }`}
                   />
-                  <span>{item.label}</span>
+                  <span className="relative z-10">{item.label}</span>
                 </button>
               );
             })}
@@ -810,7 +822,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => void handleSignOut()}
-              className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
+              className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 transition-all duration-150 active:scale-[0.98] cursor-pointer"
             >
               <LogOut className="w-3.5 h-3.5" />
               Sign Out
@@ -819,14 +831,25 @@ export default function App() {
         </aside>
 
         {/* Mobile Drawer Sidebar */}
-        {mobileMenuOpen && (
-          <div className="fixed inset-0 z-50 lg:hidden flex">
-            <div
-              className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs"
-              onClick={() => setMobileMenuOpen(false)}
-            />
-            <aside className="relative w-72 max-w-[82vw] bg-white h-full flex flex-col border-r border-slate-200 z-10">
-              <div className="px-5 h-14 border-b border-slate-200 flex items-center justify-between">
+        <AnimatePresence>
+          {mobileMenuOpen && (
+            <div className="fixed inset-0 z-50 lg:hidden flex">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.16 }}
+                className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs"
+                onClick={() => setMobileMenuOpen(false)}
+              />
+              <motion.aside
+                initial={{ x: '-100%' }}
+                animate={{ x: 0 }}
+                exit={{ x: '-100%' }}
+                transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                className="relative w-72 max-w-[82vw] bg-white h-full flex flex-col border-r border-slate-200 z-10 shadow-xl"
+              >
+                <div className="px-5 h-14 border-b border-slate-200 flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
                   <div className="w-7 h-7 rounded-lg bg-blue-700 text-white flex items-center justify-center font-display font-bold text-sm">
                     C
@@ -891,15 +914,16 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => void handleSignOut()}
-                  className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-slate-200 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                  className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-slate-200 text-xs font-medium text-slate-700 hover:bg-slate-50 active:scale-[0.98] transition-all duration-150"
                 >
                   <LogOut className="w-3.5 h-3.5" />
                   Sign Out
                 </button>
               </div>
-            </aside>
-          </div>
-        )}
+              </motion.aside>
+            </div>
+          )}
+        </AnimatePresence>
 
         {/* Main Content Viewport */}
         <div className="flex-1 min-w-0 flex flex-col">
@@ -928,7 +952,7 @@ export default function App() {
                 type="button"
                 onClick={() => void handleSyncWorkspace()}
                 disabled={workspaceLoading}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all duration-150 active:scale-[0.98] whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50"
               >
                 <RefreshCw
                   className={`w-3.5 h-3.5 ${workspaceLoading ? 'animate-spin' : ''}`}
@@ -950,10 +974,10 @@ export default function App() {
             <AnimatePresence mode="wait">
               <motion.div
                 key={activeTab}
-                initial={{ opacity: 0, y: 6 }}
+                initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -4 }}
-                transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
               >
                 {activeTab === 'overview' && (
                   <OverviewPanel
@@ -1047,10 +1071,18 @@ export default function App() {
                 key={item.id}
                 type="button"
                 onClick={() => setActiveTab(item.id)}
-                className={`flex flex-col items-center justify-center gap-0.5 text-[11px] font-medium transition-colors whitespace-nowrap cursor-pointer ${
+                className={`relative flex flex-col items-center justify-center gap-0.5 text-[11px] font-medium transition-colors duration-150 whitespace-nowrap cursor-pointer active:scale-95 ${
                   active ? 'text-blue-700' : 'text-slate-500 hover:text-slate-900'
                 }`}
               >
+                {active && (
+                  <motion.span
+                    layoutId="mobile-tab-indicator"
+                    transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                    className="absolute top-0 inset-x-4 h-0.5 rounded-full bg-blue-700"
+                    aria-hidden="true"
+                  />
+                )}
                 <Icon
                   className={`w-4 h-4 shrink-0 ${
                     active ? 'text-blue-700' : 'text-slate-400'

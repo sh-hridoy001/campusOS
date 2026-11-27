@@ -9,6 +9,7 @@ import crypto from 'crypto';
 import { GoogleGenAI, Type } from '@google/genai';
 import { getApp, getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth, type DecodedIdToken } from 'firebase-admin/auth';
+import { getFirestore } from 'firebase-admin/firestore';
 import {
   CAMPUS_LINKS,
   formatCampusKnowledgeForAI,
@@ -22,12 +23,18 @@ const PORT = Number(process.env.PORT) || 3000;
 const firebaseConfigPath = path.resolve(__dirname, 'firebase-applet-config.json');
 const firebaseAppletConfig = JSON.parse(fs.readFileSync(firebaseConfigPath, 'utf-8')) as {
   projectId: string;
+  firestoreDatabaseId?: string;
 };
 
 const adminApp = getApps().length
   ? getApp()
   : initializeApp({ projectId: firebaseAppletConfig.projectId });
 const adminAuth = getAuth(adminApp);
+const adminDb =
+  firebaseAppletConfig.firestoreDatabaseId &&
+  firebaseAppletConfig.firestoreDatabaseId !== '(default)'
+    ? getFirestore(adminApp, firebaseAppletConfig.firestoreDatabaseId)
+    : getFirestore(adminApp);
 
 function getGeminiClient() {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
@@ -75,42 +82,52 @@ interface LostFoundItem {
 const storedNotes: StoredNote[] = [];
 const lostFoundItems: LostFoundItem[] = [];
 
+export const BOOTSTRAPPED_ADMIN_EMAIL = 'sazzadhossainhridoy961@gmail.com';
+export type TrustedRole = 'student' | 'teacher' | 'admin';
+
+const ALLOWED_TRUSTED_ROLES: readonly TrustedRole[] = ['student', 'teacher', 'admin'];
+
+export interface AdminUserRecord {
+  uid: string;
+  email?: string;
+  emailVerified?: boolean;
+  customClaims?: Record<string, unknown>;
+}
+
+export interface ServerDeps {
+  verifyIdToken?: (token: string) => Promise<DecodedIdToken>;
+  getUser?: (uid: string) => Promise<AdminUserRecord>;
+  getUserByEmail?: (email: string) => Promise<AdminUserRecord>;
+  setCustomUserClaims?: (
+    uid: string,
+    claims: Record<string, unknown> | null,
+  ) => Promise<void>;
+  syncProfileRole?: (uid: string, role: TrustedRole) => Promise<boolean>;
+}
+
 interface AuthenticatedRequest extends Request {
   authUser?: DecodedIdToken;
 }
 
-async function requireFirebaseAuth(
-  req: AuthenticatedRequest,
-  res: Response,
-  next: NextFunction,
-) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    res.status(401).json({ error: 'Authentication required. Please sign in.' });
-    return;
-  }
-
-  const token = authHeader.slice('Bearer '.length).trim();
-  if (!token) {
-    res.status(401).json({ error: 'Invalid authentication token.' });
-    return;
-  }
-
-  try {
-    const decoded = await adminAuth.verifyIdToken(token);
-    req.authUser = decoded;
-    next();
-  } catch (err) {
-    console.error('Firebase token verification error:', err);
-    res.status(401).json({ error: 'Session expired or invalid. Please sign in again.' });
-  }
-}
-
-function isBootstrappedAdmin(user: DecodedIdToken): boolean {
+export function isBootstrappedAdmin(user: DecodedIdToken): boolean {
   return (
-    user.email === 'sazzadhossainhridoy961@gmail.com' &&
+    (user.email || '').toLowerCase() === BOOTSTRAPPED_ADMIN_EMAIL &&
     user.email_verified === true
   );
+}
+
+export function getTrustedRole(user: DecodedIdToken): TrustedRole {
+  if (isBootstrappedAdmin(user) || user.role === 'admin') {
+    return 'admin';
+  }
+  if (user.role === 'teacher') {
+    return 'teacher';
+  }
+  return 'student';
+}
+
+export function isAdminUser(user: DecodedIdToken): boolean {
+  return getTrustedRole(user) === 'admin';
 }
 
 const BUSY_ERROR_BANGLA =
@@ -255,9 +272,158 @@ function handleGeminiError(err: unknown, res: Response) {
   res.status(500).json({ error: BUSY_ERROR_BANGLA });
 }
 
-async function startServer() {
+export function createExpressApp(deps: ServerDeps = {}) {
+  const verifyIdToken =
+    deps.verifyIdToken ?? ((token: string) => adminAuth.verifyIdToken(token));
+  const getUser =
+    deps.getUser ?? ((uid: string) => adminAuth.getUser(uid));
+  const getUserByEmail =
+    deps.getUserByEmail ?? ((email: string) => adminAuth.getUserByEmail(email));
+  const setCustomUserClaims =
+    deps.setCustomUserClaims ??
+    ((uid: string, claims: Record<string, unknown> | null) =>
+      adminAuth.setCustomUserClaims(uid, claims));
+  const syncProfileRole =
+    deps.syncProfileRole ??
+    (async (uid: string, role: TrustedRole): Promise<boolean> => {
+      try {
+        const docRef = adminDb.collection('profiles').doc(uid);
+        const snap = await docRef.get();
+        if (!snap.exists) {
+          return false;
+        }
+        await docRef.update({ role });
+        return true;
+      } catch (err) {
+        console.warn('Could not sync Firestore profile role display field:', err);
+        return false;
+      }
+    });
+
+  async function requireFirebaseAuth(
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction,
+  ) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      res.status(401).json({ error: 'Authentication required. Please sign in.' });
+      return;
+    }
+
+    const token = authHeader.slice('Bearer '.length).trim();
+    if (!token) {
+      res.status(401).json({ error: 'Invalid authentication token.' });
+      return;
+    }
+
+    try {
+      const decoded = await verifyIdToken(token);
+      req.authUser = decoded;
+      next();
+    } catch (err) {
+      console.error('Firebase token verification error:', err);
+      res.status(401).json({ error: 'Session expired or invalid. Please sign in again.' });
+    }
+  }
+
+  function requireAdmin(
+    req: AuthenticatedRequest,
+    res: Response,
+    next: NextFunction,
+  ) {
+    if (!req.authUser || !isAdminUser(req.authUser)) {
+      res.status(403).json({ error: 'Administrator privileges are required.' });
+      return;
+    }
+    next();
+  }
+
   const app = express();
   app.use(express.json({ limit: '25mb' }));
+
+  // 0. Trusted Role Management (Admin Custom Claims)
+  app.post(
+    '/api/admin/set-role',
+    requireFirebaseAuth,
+    requireAdmin,
+    async (req: AuthenticatedRequest, res: Response) => {
+      const { uid, email, role } = req.body ?? {};
+
+      if (typeof role !== 'string' || !ALLOWED_TRUSTED_ROLES.includes(role as TrustedRole)) {
+        res.status(400).json({ error: 'Role must be student, teacher, or admin.' });
+        return;
+      }
+      const nextRole = role as TrustedRole;
+
+      const targetUid = typeof uid === 'string' ? uid.trim() : '';
+      const targetEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+      if (!targetUid && !targetEmail) {
+        res.status(400).json({ error: 'Target user uid or email is required.' });
+        return;
+      }
+
+      let targetUser: AdminUserRecord;
+      try {
+        targetUser = targetUid
+          ? await getUser(targetUid)
+          : await getUserByEmail(targetEmail);
+      } catch (err) {
+        const code =
+          err && typeof err === 'object' ? (err as { code?: unknown }).code : undefined;
+        if (code === 'auth/user-not-found') {
+          res.status(404).json({ error: 'Target user account was not found.' });
+          return;
+        }
+        console.error('Failed to look up target user for role assignment:', err);
+        res.status(500).json({
+          error:
+            'Failed to look up user account. Verify Firebase Admin SDK IAM permissions.',
+        });
+        return;
+      }
+
+      if (targetUser.uid === req.authUser!.uid) {
+        res.status(403).json({
+          error: 'Users cannot modify their own role or privilege claims.',
+        });
+        return;
+      }
+
+      if (
+        (targetUser.email || '').toLowerCase() === BOOTSTRAPPED_ADMIN_EMAIL &&
+        nextRole !== 'admin'
+      ) {
+        res.status(403).json({
+          error: 'The bootstrapped administrator account cannot be demoted.',
+        });
+        return;
+      }
+
+      try {
+        const nextClaims: Record<string, unknown> = {
+          ...(targetUser.customClaims ?? {}),
+          role: nextRole,
+        };
+        await setCustomUserClaims(targetUser.uid, nextClaims);
+      } catch (err) {
+        console.error('Failed to set Firebase custom user claims:', err);
+        res.status(500).json({
+          error:
+            'Failed to assign trusted role claim. Verify Firebase Admin SDK IAM permissions.',
+        });
+        return;
+      }
+
+      const profileSynced = await syncProfileRole(targetUser.uid, nextRole);
+      res.json({
+        uid: targetUser.uid,
+        email: targetUser.email ?? null,
+        role: nextRole,
+        profileSynced,
+      });
+    },
+  );
 
   // 1. Summarize Campus Notice using Gemini AI
   app.post(
@@ -365,9 +531,10 @@ async function startServer() {
         return;
       }
 
+      const verifiedRole = getTrustedRole(req.authUser!);
       const profileText = context?.profile
-        ? `Current User: ${String(context.profile.full_name || 'Campus Member')} | Role: ${String(context.profile.role || 'student')} | Technology/Department: ${String(context.profile.department || 'General')} | Shift: ${String(context.profile.shift || 'Not specified')} | Semester: ${String(context.profile.semester || 'Not specified')}`
-        : 'Current User: Campus Member';
+        ? `Current User: ${String(context.profile.full_name || 'Campus Member')} | Role: ${verifiedRole} | Technology/Department: ${String(context.profile.department || 'General')} | Shift: ${String(context.profile.shift || 'Not specified')} | Semester: ${String(context.profile.semester || 'Not specified')}`
+        : `Current User: Campus Member | Role: ${verifiedRole}`;
 
       const noticesList = Array.isArray(context?.notices)
         ? context.notices
@@ -413,7 +580,7 @@ async function startServer() {
         day: 'numeric',
       }).format(new Date());
 
-      const systemInstruction = `You are the official BSPI AI Campus Assistant for Bangladesh Sweden Polytechnic Institute (BSPI), Kaptai (${CAMPUS_LINKS.officialWebsite}). You help BSPI students, teachers, and administrators with class routines, shift schedules (1st Shift & 2nd Shift), BTEB academic info, and official notices.
+      const systemInstruction = `You are the official BSPI AI Campus Assistant for Bangladesh Sweden Polytechnic Institute (BSPI), Kaptai (${CAMPUS_LINKS.officialWebsite}). You help BSPI students, teachers, and administrators with class routines, shift schedules (1st Shift & 2nd Shift), BTEB Probidhan-2022 booklists/subject codes, academic rules, and official notices.
 
 Current Date & Day in Bangladesh (Asia/Dhaka): ${nowDhaka}
 ${profileText}
@@ -426,19 +593,30 @@ ${noticesList || 'No notices currently posted in CampusOS.'}
 Live CampusOS Class Routines (from Firestore):
 ${routinesList || 'No class routines currently scheduled in CampusOS.'}
 
+Strict BSPI 6-Technology Scope Rule (CRITICAL):
+- BSPI Kaptai offers STRICTLY ONLY these 6 technologies:
+  1. Computer Science & Technology (85)
+  2. Electrical Technology (67)
+  3. Mechanical Technology (70)
+  4. Automobile Technology (62)
+  5. Construction Technology (88)
+  6. Civil (Wood) Technology (65)
+- Remember: There is NO standalone "Civil Technology (64)", "Electronics", "Architecture", "Power", "Textile", or any other technology at BSPI. Only "Civil (Wood) Technology (65)" and "Construction Technology (88)" exist.
+- If a user asks about books, syllabus, or subjects of ANY technology outside BSPI's 6 departments (for example: standalone Civil Technology, Architecture, Electronics, Textile, RAC, etc.), NEVER invent or provide booklists for that non-BSPI department. Instead, politely explain in simple Bengali that ওই টেকনোলজিটি BSPI কাপ্তাই-এর নির্ধারিত ৬টি ডিপার্টমেন্টের অন্তর্ভুক্ত নয়, list BSPI's 6 technologies clearly, and invite them to ask about Probidhan-2022 subjects/booklists for any of those 6 departments (or check ${CAMPUS_LINKS.booklists}).
+
 Language & Formatting Rules (CRITICAL):
 - ALWAYS reply in simple, fluent, warm, and polite Bengali (সহজ, প্রাঞ্জল ও ভদ্র বাংলায় উত্তর দাও).
-- If the user writes in Bengali OR in Banglish (Bengali written using English/Latin letters, such as "amar ajke ki class ache?", "exam notice ta bolo", "1st shift er routine dao"), understand the Banglish accurately and ALWAYS respond in Bengali script (বাংলা অক্ষরে).
+- If the user writes in Bengali OR in Banglish (Bengali written using English/Latin letters, such as "amar ajke ki class ache?", "cst 4th semester er booklist dao", "1st shift er routine dao"), understand the Banglish accurately and ALWAYS respond in Bengali script (বাংলা অক্ষরে).
 - Even if the user asks a regular question in English, reply in natural Bengali unless the user EXPLICITLY requests English (e.g., "answer in English", "reply in English", "write in English").
-- Use clean Markdown formatting (**bold** for times, subjects, room numbers, shifts, and important dates; clean bullet lists or numbered steps) so answers render neatly inside cards.
+- Use clean Markdown formatting (**bold** for subject codes, times, subjects, room numbers, shifts, and important dates; clean bullet lists or numbered steps) so answers render neatly inside cards.
 
 Source Priority & Strict Honesty Rules (MOST IMPORTANT):
-1. Prioritize the BSPI Campus Knowledge Base above (including ${CAMPUS_LINKS.officialWebsite}) and the Live CampusOS Notices & Class Routines provided above as your primary source of truth.
-2. When the user asks about classes or schedule, prioritize their own Technology/Department, Shift, and Semester unless they ask about another department or shift.
-3. NEVER invent, guess, or fabricate any notice, exam date, form fill-up deadline, result date, class time, teacher name, or room number that is NOT explicitly present in the Live CampusOS Notices, Live Class Routines, or Campus Knowledge Base above.
+1. Prioritize the BSPI Campus Knowledge Base above (including ${CAMPUS_LINKS.officialWebsite}, ${CAMPUS_LINKS.btebWebsite}, and ${CAMPUS_LINKS.booklists}) and the Live CampusOS Notices & Class Routines provided above as your primary source of truth.
+2. When the user asks about classes, schedule, or Probidhan-2022 subjects, prioritize their own Technology/Department, Shift, and Semester unless they ask about another of the 6 BSPI departments or semesters.
+3. NEVER invent, guess, or fabricate any notice, exam date, form fill-up deadline, result date, class time, teacher name, room number, or unverified subject code that is NOT explicitly present in the Live CampusOS Notices, Live Class Routines, or Campus Knowledge Base above.
 4. If the requested specific notice, exam date, routine, or live campus update is missing from the data above, honestly and politely tell the user in Bengali:
    - তথ্যটি বর্তমানে CampusOS সিস্টেমে পাওয়া যায়নি (বা যুক্ত করা হয়নি)।
-   - যাচাই করার জন্য সরাসরি BSPI-এর অফিশিয়াল ওয়েবসাইট [bspi.polytech.gov.bd](${CAMPUS_LINKS.officialWebsite}) (অথবা নোটিশ বোর্ড: ${CAMPUS_LINKS.officialNotices}) দেখতে এবং প্রয়োজনে সংশ্লিষ্ট ডিপার্টমেন্ট অফিসে যোগাযোগ করতে পরামর্শ দাও।`;
+   - যাচাই করার জন্য সরাসরি BSPI-এর অফিশিয়াল ওয়েবসাইট [bspi.polytech.gov.bd](${CAMPUS_LINKS.officialWebsite}), নোটিশ বোর্ড (${CAMPUS_LINKS.officialNotices}), অথবা প্রবিধান ২০২২ বুকলিস্ট পোর্টাল [btebresultszone.com/bn/booklists](${CAMPUS_LINKS.booklists}) দেখতে এবং প্রয়োজনে সংশ্লিষ্ট ডিপার্টমেন্ট অফিসে যোগাযোগ করতে পরামর্শ দাও।`;
 
       try {
         const history = sanitizedMessages.slice(0, -1).map((m) => ({
@@ -569,7 +747,7 @@ Source Priority & Strict Honesty Rules (MOST IMPORTANT):
         return;
       }
       const note = storedNotes[idx];
-      if (note.uploadedBy !== req.authUser!.uid && !isBootstrappedAdmin(req.authUser!)) {
+      if (note.uploadedBy !== req.authUser!.uid && !isAdminUser(req.authUser!)) {
         res.status(403).json({ error: 'You do not have permission to delete this note.' });
         return;
       }
@@ -701,7 +879,7 @@ Source Priority & Strict Honesty Rules (MOST IMPORTANT):
         res.status(404).json({ error: 'Item not found.' });
         return;
       }
-      if (item.createdBy !== req.authUser!.uid && !isBootstrappedAdmin(req.authUser!)) {
+      if (item.createdBy !== req.authUser!.uid && !isAdminUser(req.authUser!)) {
         res.status(403).json({ error: 'Only the reporter or an admin can update this item.' });
         return;
       }
@@ -725,7 +903,7 @@ Source Priority & Strict Honesty Rules (MOST IMPORTANT):
         return;
       }
       const item = lostFoundItems[idx];
-      if (item.createdBy !== req.authUser!.uid && !isBootstrappedAdmin(req.authUser!)) {
+      if (item.createdBy !== req.authUser!.uid && !isAdminUser(req.authUser!)) {
         res.status(403).json({ error: 'Only the reporter or an admin can delete this item.' });
         return;
       }
@@ -733,6 +911,12 @@ Source Priority & Strict Honesty Rules (MOST IMPORTANT):
       res.json({ deleted: true });
     },
   );
+
+  return app;
+}
+
+async function startServer() {
+  const app = createExpressApp();
 
   // Vite dev middleware or production static assets
   if (process.env.NODE_ENV !== 'production') {
@@ -755,7 +939,20 @@ Source Priority & Strict Honesty Rules (MOST IMPORTANT):
   });
 }
 
-startServer().catch((err) => {
-  console.error('Failed to start CampusOS server:', err);
-  process.exit(1);
-});
+function isMainEntrypoint(): boolean {
+  if (!process.argv[1]) {
+    return false;
+  }
+  try {
+    return fs.realpathSync(process.argv[1]) === fs.realpathSync(__filename);
+  } catch {
+    return path.resolve(process.argv[1]) === __filename;
+  }
+}
+
+if (isMainEntrypoint()) {
+  startServer().catch((err) => {
+    console.error('Failed to start CampusOS server:', err);
+    process.exit(1);
+  });
+}
